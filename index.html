@@ -792,6 +792,7 @@ function toggleTheme(){
         </select></div>
       <div class="fg"><label id="recDateLabel">วันที่ยืม จาก</label><input type="date" id="recDateS" onchange="_recFilterChange()"></div>
       <div class="fg"><label>ถึง</label><input type="date" id="recDateE" onchange="_recFilterChange()"></div>
+      <button class="btn bg sm" onclick="clearRecFilter()">✕ ล้างทั้งหมด</button>
       <button class="btn bg sm" onclick="loadAll()">🔄 โหลด</button>
       <div class="fg"><label style="font-size:9px">ดาวน์โหลด</label>
         <div style="display:flex;gap:4px">
@@ -880,6 +881,7 @@ function toggleTheme(){
       <div class="fg"><label>ถึง</label><input type="date" id="allDateE" onchange="_allFilterChange()"></div>
       <div class="fg"><label>เวลา จาก</label><input type="time" id="allTimeS" onchange="_allFilterChange()"></div>
       <div class="fg"><label>เวลา ถึง</label><input type="time" id="allTimeE" onchange="_allFilterChange()"></div>
+      <button class="btn bg sm" onclick="clearAllDataFilter()">✕ ล้างทั้งหมด</button>
       <div class="fg"><label style="font-size:9px">ดาวน์โหลด (ครบตาม filter)</label>
         <div style="display:flex;gap:4px">
           <button class="btn bg sm" onclick="dlPage('all','csv')">CSV</button>
@@ -1069,6 +1071,10 @@ function toggleTheme(){
     <div style="background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:12px">
       <div style="font-size:11px;color:var(--mu);margin-bottom:8px" id="cmpT2"></div>
       <div style="position:relative;height:220px"><canvas id="cmpC2" role="img" aria-label="กราฟจำนวนการยืม"></canvas></div>
+    </div>
+    <div style="background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:12px">
+      <div style="font-size:11px;color:var(--mu);margin-bottom:8px" id="cmpT3"></div>
+      <div style="position:relative;height:220px"><canvas id="cmpC3" role="img" aria-label="กราฟ Utilization เปอร์เซ็นต์"></canvas></div>
     </div>
     <div style="background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:12px">
       <div style="font-size:11px;color:var(--mu);margin-bottom:8px">เปรียบเทียบทุกเครื่องมือ ทุกปี — คลิกแถวเพื่อเลือก</div>
@@ -2398,6 +2404,11 @@ function toggleTheme(){
           </select>
         </div>
       </div>
+      <!-- ── แก้เลขอุปกรณ์ประกอบ (แสดงเฉพาะที่มีจริงในรายการ) ── -->
+      <div id="admEditAccList" style="display:none;margin-top:10px">
+        <div style="font-size:12px;font-weight:600;color:var(--mu);margin-bottom:6px">🔧 เลขอุปกรณ์ประกอบ</div>
+        <div id="admEditAccInputs"></div>
+      </div>
     </div>
     <div class="mftr">
       <button class="btn ber sm" onclick="admDeleteBorrow(document.getElementById('admEditRecID').value)">🗑 ลบรายการนี้</button>
@@ -3207,6 +3218,8 @@ function buildStaff(){['giverSel','receiverSel','transfererSel'].forEach(functio
 function handleStaff(p){var sel=document.getElementById(p+'Sel'),oth=document.getElementById(p+'Oth');if(!sel||!oth)return;oth.style.display=sel.value==='อื่นๆ'?'block':'none';if(sel.value!=='อื่นๆ')oth.value='';}
 function getStaff(p){var sel=document.getElementById(p+'Sel'),oth=document.getElementById(p+'Oth');if(!sel)return'';return sel.value==='อื่นๆ'?(oth?oth.value.trim():''):sel.value;}
 function initFilters(){['allDept','recDept','dailyDept'].forEach(function(id){var el=document.getElementById(id);if(!el)return;DEPTS.forEach(function(d){el.innerHTML+='<option value="'+d.n+'">'+d.n+'</option>';});});['allEq','recEq','dailyFilter'].forEach(function(id){var el=document.getElementById(id);if(!el)return;EQL.forEach(function(e){el.innerHTML+='<option value="'+e+'">'+e+'</option>';});});}
+function clearRecFilter(){['recSearch','recDateS','recDateE'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});['recEq','recDept','recStat'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});_recFilterChange();}
+function clearAllDataFilter(){['allSearch','allDateS','allDateE','allTimeS','allTimeE'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});['allDept','allEq','allStat','allRetRemark'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});_allFilterChange();}
 function clearDailyFilter(){['dailySearch','dailyDateS','dailyDateE'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});['dailyFilter','dailyDept'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});renderDaily();}
 function clearSumFilter(){['sumS','sumE'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});['sumDept','sumEq','sumStat'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});updateSumFilterBadges();loadSum();}
 
@@ -3418,6 +3431,17 @@ function computeStatus(borrow){if(!borrow)return'PENDING';var raw=S(borrow.Statu
 function expanded(){if(!loans||!borrows)return[];var _bwMap=new Map();borrows.forEach(function(b){_bwMap.set(S(b.LoanID)+'__'+N(b.EquipItemIndex),b);});var out=[];loans.forEach(function(loan){if(loan.Status==='CANCELLED'){(loan.EquipmentList||[]).forEach(function(eq,idx){out.push({loan:loan,eq:eq,idx:idx,borrow:null,status:'CANCELLED'});});return;}(loan.EquipmentList||[]).forEach(function(eq,idx){var bw=_bwMap.get(S(loan.LoanID)+'__'+idx)||null;out.push({loan:loan,eq:eq,idx:idx,borrow:bw,status:computeStatus(bw)});});});return out;}
 var STATUS_ORDER={PENDING:0,ACTIVE:1,ACC_PENDING:2,RETURNED:3,CANCELLED:4};
 function sortItems(items){return items.slice().sort(function(a,b){var pa=STATUS_ORDER[a.status]!==undefined?STATUS_ORDER[a.status]:5;var pb=STATUS_ORDER[b.status]!==undefined?STATUS_ORDER[b.status]:5;if(pa!==pb)return pa-pb;return(b.loan.LoanDate||'').localeCompare(a.loan.LoanDate||'');});}
+function _exactMatchFirst(list,search,getFieldsFn){
+  if(!search)return list;
+  var s=search.toLowerCase().trim();if(!s)return list;
+  var exact=[],rest=[];
+  list.forEach(function(x){
+    var fields=getFieldsFn(x)||[];
+    var isExact=fields.some(function(f){return S(f).toLowerCase()===s;});
+    (isExact?exact:rest).push(x);
+  });
+  return exact.concat(rest);
+}
 function badge(s){var m={PENDING:['bp2','รอดำเนินการจ่าย'],ACTIVE:['ba','ยืม'],RETURNED:['br2','คืน'],ACC_PENDING:['bap','คืน (อุปกรณ์ค้าง)'],CANCELLED:['bc2','ยกเลิก']};var p=m[s]||['bp2',s];return'<span class="badge '+p[0]+'">'+p[1]+'</span>';}
 function standbyBadge(eq){if(!eq)return'';var n=S(eq.name||'');if(!n.toLowerCase().includes('standby'))return'';return' <span style="display:inline-flex;align-items:center;gap:3px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;color:#f59e0b;vertical-align:middle">⏸ STANDBY</span>';}
 function buildTransferTrail(loan,borrow){if(!borrow)return'';var th=Array.isArray(borrow.TransferHistory)?borrow.TransferHistory:[];if(!th.length)return'';var crumbs=[];if(th[0]&&S(th[0].fromDept)){crumbs.push(ES(th[0].fromDept));}else{var _m=th[0]&&S(th[0].note).match(/โอนจาก\s*(.+)/);crumbs.push(_m&&_m[1].trim()?esc(_m[1].trim()):ES(loan.DeptName));}th.forEach(function(t){crumbs.push(ES(t.toDept));});var chips=crumbs.map(function(dept,i){var isLast=i===crumbs.length-1;if(isLast)return'<span class="tr-chip-cur">'+dept+' <span class="tr-now">ปัจจุบัน</span></span>';return'<span class="tr-chip">'+dept+'</span> <span class="tr-arr">›</span> ';}).join('');var last=th[th.length-1];var meta=last?'<div class="tr-meta">โอนล่าสุด '+S(last.date)+(last.transfererName?' · '+ES(last.transfererName):'')+' </div>':'';return'<div class="transfer-trail"><span class="tr-label">จากแผนก</span> '+chips+meta+'</div>';}
@@ -3466,7 +3490,7 @@ function _getRecGroups(){
   var groups=[],gmap={};
   items.forEach(function(item){var lid=S(item.loan.LoanID);if(!gmap[lid]){gmap[lid]=[];groups.push({lid:lid,loan:item.loan,items:gmap[lid]});}gmap[lid].push(item);});
   groups.sort(function(a,b){var pa=Math.min.apply(null,a.items.map(function(i){return STATUS_ORDER[i.status]!==undefined?STATUS_ORDER[i.status]:5;}));var pb=Math.min.apply(null,b.items.map(function(i){return STATUS_ORDER[i.status]!==undefined?STATUS_ORDER[i.status]:5;}));if(pa!==pb)return pa-pb;return(b.loan.LoanDate||'').localeCompare(a.loan.LoanDate||'');});
-  return groups;
+  return _exactMatchFirst(groups,search,function(g){return[g.lid,g.loan.BorrowerName,g.loan.DeptName,g.loan.PatientName];});
 }
 
 function _renderRecPager(totalGroups){
@@ -3599,12 +3623,12 @@ async function autoRecalcLoan(loanID){if(!loanID||!loans||!borrows)return;var ex
 function openBorrow(loanID,idx){var loan=loans.find(function(l){return S(l.LoanID)===S(loanID);});var eq=loan?(loan.EquipmentList||[])[idx]:null;_borrowEqName=eq?S(eq.name):'';document.getElementById('bLoanID').value=S(loanID);document.getElementById('bIdx').value=idx;document.getElementById('giverSel').value='';document.getElementById('giverOth').style.display='none';document.getElementById('giverOth').value='';document.getElementById('eqNo').value='';selAccs={};buildAccTable();renderAccTags();document.getElementById('bInfo').innerHTML=loan?'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px"><div>📅 '+loan.LoanDate+'</div><div>ผู้ยืม: <strong>'+ES(loan.BorrowerName)+'</strong></div><div>แผนก: <strong>'+ES(loan.DeptName)+'</strong></div><div>ผู้ป่วย: '+ES(loan.PatientName)+'</div></div>':'';document.getElementById('bItem').innerHTML=eq?'🔧 <span style="color:var(--ac)">'+ES(eq.name)+'</span>'+(eq.detail?' — '+esc(eq.detail):''):'-';openM('mBorrow');}
 async function saveBorrow(){var loanID=S(document.getElementById('bLoanID').value);var idx=N(document.getElementById('bIdx').value);var giver=getStaff('giver');var eqNo=S(document.getElementById('eqNo').value);if(!loanID){bigToast('ไม่พบ LoanID','error');return;}if(!giver){bigToast('กรุณาเลือกหรือระบุผู้ให้ยืม','error');return;}Object.keys(selAccs).forEach(function(id){var n=document.getElementById('accno_'+id);if(n)selAccs[id].no=String(n.value).trim();});var btn=document.getElementById('saveBBtn');if(btn){btn.disabled=true;btn.innerHTML='⏳ กำลังบันทึก...';}try{var r=await API.submitBorrow({loanID,equipItemIndex:idx,giverName:giver,equipmentNo:eqNo,equipmentName:_borrowEqName,accessories:Object.values(selAccs)});if(btn){btn.disabled=false;btn.innerHTML='💾 บันทึก';}if(r&&r.duplicate){bigToast(r.error,'warning');return;}bigToast('บันทึกสำเร็จ!\n'+r.recordID,'success');closeM('mBorrow');setTimeout(async function(){await loadAll();await autoRecalcLoan(loanID);},800);}catch(e){if(btn){btn.disabled=false;btn.innerHTML='💾 บันทึก';}bigToast('บันทึกล้มเหลว:\n'+e.message,'error');}}
 
-function openReturn(recID,loanID,idx){if(!recID){bigToast('ไม่พบข้อมูลการยืม\nกรุณาบันทึกการยืมก่อน','error');return;}var loan=loans.find(function(l){return S(l.LoanID)===S(loanID);});var bw=borrows.find(function(b){return S(b.RecordID)===S(recID);});if(!bw){bigToast('ไม่พบข้อมูลการยืม (RecordID: '+recID+')','error');return;}var eq=loan?(loan.EquipmentList||[])[idx]:null;_retBorrowData.accs=bw.Accessories||[];_retBorrowData.retAccs=bw.ReturnedAccs||[];_retBorrowData.recID=recID;_retBorrowData.loanID=S(loanID);_retBorrowData.eqName=eq?S(eq.name):'?';_retBorrowData.eqNo=S(bw.EquipmentNo||'—');_retBorrowData.machineAlreadyReturned=bw.MachineReturned===true;document.getElementById('retRecID').value=recID;document.getElementById('receiverSel').value='';document.getElementById('receiverOth').style.display='none';document.getElementById('retRemark').value='';document.getElementById('retDet').value='';document.getElementById('retDetGrp').style.display='none';document.getElementById('retDate').value=new Date().toISOString().split('T')[0];var trailSection=bw.TransferHistory&&bw.TransferHistory.length&&loan?'<div style="margin-top:6px">'+buildTransferTrail(loan,bw)+'</div>':'';document.getElementById('retInfo').innerHTML='<strong>'+esc(_retBorrowData.eqName)+'</strong> เลขเครื่อง: <span style="font-family:var(--mo);color:var(--ac)">'+esc(_retBorrowData.eqNo)+'</span><br>แผนก: <strong>'+(loan?ES(loan.DeptName):'-')+'</strong> | ผู้ป่วย: '+(loan?ES(loan.PatientName):'-')+' | ผู้ให้ยืม: '+ES(bw.GiverName||'-')+trailSection;var machineCb=document.getElementById('retMachineCb');var machineStatus=document.getElementById('retMachineStatus');document.getElementById('retMachineLbl').textContent=_retBorrowData.eqName+' (เลขเครื่อง: '+_retBorrowData.eqNo+')';if(_retBorrowData.machineAlreadyReturned){machineCb.checked=true;machineCb.disabled=true;machineCb.style.opacity='0.5';machineStatus.textContent='✓ คืนแล้ว';machineStatus.style.color='var(--ok)';}else{machineCb.checked=false;machineCb.disabled=false;machineCb.style.opacity='1';machineStatus.textContent='⏳ ยังไม่คืน';machineStatus.style.color='var(--er)';}var accs=_retBorrowData.accs,retAccs=_retBorrowData.retAccs;var retAccSection=document.getElementById('retAccSection'),retAccList=document.getElementById('retAccList');if(accs.length>0){retAccSection.style.display='block';var rhtml='';accs.forEach(function(a){var isRet=retAccs.some(function(r){return r.id===a.id;});var nameHtml=esc(a.name||'?')+(a.no?' <span style="font-family:var(--mo);color:var(--ac);font-size:11px">No.'+esc(a.no)+'</span>':'');if(isRet){rhtml+='<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--bd);opacity:.6"><span style="width:20px;height:20px;border-radius:4px;background:var(--ok);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">✓</span><span style="font-size:13px;text-decoration:line-through">'+nameHtml+'</span><span style="font-size:11px;color:var(--ok);margin-left:auto">คืนแล้ว</span></div>';}else{rhtml+='<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--bd)"><input type="checkbox" id="retcb_'+a.id+'" value="'+a.id+'" style="width:18px;height:18px;accent-color:var(--ac);cursor:pointer;flex-shrink:0" onchange="retUpdateStatus()"><label for="retcb_'+a.id+'" style="font-size:13px;cursor:pointer;flex:1">'+nameHtml+'</label><span style="font-size:11px;color:var(--er)">⏳ ยังไม่คืน</span></div>';}});retAccList.innerHTML=rhtml;}else{retAccSection.style.display='none';}retUpdateStatus();openM('mReturn');}
+function openReturn(recID,loanID,idx){if(!recID){bigToast('ไม่พบข้อมูลการยืม\nกรุณาบันทึกการยืมก่อน','error');return;}var loan=loans.find(function(l){return S(l.LoanID)===S(loanID);});var bw=borrows.find(function(b){return S(b.RecordID)===S(recID);});if(!bw){bigToast('ไม่พบข้อมูลการยืม (RecordID: '+recID+')','error');return;}var eq=loan?(loan.EquipmentList||[])[idx]:null;_retBorrowData.accs=bw.Accessories||[];_retBorrowData.retAccs=bw.ReturnedAccs||[];_retBorrowData.recID=recID;_retBorrowData.loanID=S(loanID);_retBorrowData.eqName=eq?S(eq.name):'?';_retBorrowData.eqNo=S(bw.EquipmentNo||'—');_retBorrowData.machineAlreadyReturned=bw.MachineReturned===true;document.getElementById('retRecID').value=recID;document.getElementById('receiverSel').value='';document.getElementById('receiverOth').style.display='none';document.getElementById('retRemark').value='';document.getElementById('retDet').value='';document.getElementById('retDetGrp').style.display='none';document.getElementById('retDate').value=localDateStr(new Date());var trailSection=bw.TransferHistory&&bw.TransferHistory.length&&loan?'<div style="margin-top:6px">'+buildTransferTrail(loan,bw)+'</div>':'';document.getElementById('retInfo').innerHTML='<strong>'+esc(_retBorrowData.eqName)+'</strong> เลขเครื่อง: <span style="font-family:var(--mo);color:var(--ac)">'+esc(_retBorrowData.eqNo)+'</span><br>แผนก: <strong>'+(loan?ES(loan.DeptName):'-')+'</strong> | ผู้ป่วย: '+(loan?ES(loan.PatientName):'-')+' | ผู้ให้ยืม: '+ES(bw.GiverName||'-')+trailSection;var machineCb=document.getElementById('retMachineCb');var machineStatus=document.getElementById('retMachineStatus');document.getElementById('retMachineLbl').textContent=_retBorrowData.eqName+' (เลขเครื่อง: '+_retBorrowData.eqNo+')';if(_retBorrowData.machineAlreadyReturned){machineCb.checked=true;machineCb.disabled=true;machineCb.style.opacity='0.5';machineStatus.textContent='✓ คืนแล้ว';machineStatus.style.color='var(--ok)';}else{machineCb.checked=false;machineCb.disabled=false;machineCb.style.opacity='1';machineStatus.textContent='⏳ ยังไม่คืน';machineStatus.style.color='var(--er)';}var accs=_retBorrowData.accs,retAccs=_retBorrowData.retAccs;var retAccSection=document.getElementById('retAccSection'),retAccList=document.getElementById('retAccList');if(accs.length>0){retAccSection.style.display='block';var rhtml='';accs.forEach(function(a){var isRet=retAccs.some(function(r){return r.id===a.id;});var nameHtml=esc(a.name||'?')+(a.no?' <span style="font-family:var(--mo);color:var(--ac);font-size:11px">No.'+esc(a.no)+'</span>':'');if(isRet){rhtml+='<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--bd);opacity:.6"><span style="width:20px;height:20px;border-radius:4px;background:var(--ok);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px">✓</span><span style="font-size:13px;text-decoration:line-through">'+nameHtml+'</span><span style="font-size:11px;color:var(--ok);margin-left:auto">คืนแล้ว</span></div>';}else{rhtml+='<div style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--bd)"><input type="checkbox" id="retcb_'+a.id+'" value="'+a.id+'" style="width:18px;height:18px;accent-color:var(--ac);cursor:pointer;flex-shrink:0" onchange="retUpdateStatus()"><label for="retcb_'+a.id+'" style="font-size:13px;cursor:pointer;flex:1">'+nameHtml+'</label><span style="font-size:11px;color:var(--er)">⏳ ยังไม่คืน</span></div>';}});retAccList.innerHTML=rhtml;}else{retAccSection.style.display='none';}retUpdateStatus();openM('mReturn');}
 function retUpdateStatus(){var machineCb=document.getElementById('retMachineCb');var machineStatus=document.getElementById('retMachineStatus');var machineReturned=_retBorrowData.machineAlreadyReturned||(machineCb&&machineCb.checked);if(machineStatus&&!_retBorrowData.machineAlreadyReturned){machineStatus.textContent=machineCb&&machineCb.checked?'✓ คืนแล้ว':'⏳ ยังไม่คืน';machineStatus.style.color=machineCb&&machineCb.checked?'var(--ok)':'var(--er)';}var accs=_retBorrowData.accs,retAccs=_retBorrowData.retAccs;var alreadyCount=0;accs.forEach(function(a){if(retAccs.some(function(r){return r.id===a.id;}))alreadyCount++;});var newlyChecked=0;accs.forEach(function(a){var cb=document.getElementById('retcb_'+a.id);if(cb&&cb.checked)newlyChecked++;});var totalAccRet=alreadyCount+newlyChecked,accRem=accs.length-totalAccRet;var summary=document.getElementById('retAccSummary');if(summary&&accs.length>0)summary.textContent='อุปกรณ์คืนแล้ว '+totalAccRet+'/'+accs.length+' รายการ'+(accRem>0?' — ค้างอีก '+accRem+' รายการ':'');var statusBox=document.getElementById('retStatusBox');if(statusBox){if(!machineReturned&&newlyChecked===0)statusBox.innerHTML='<span style="color:var(--mu)">เลือกรายการที่ต้องการคืนในครั้งนี้</span>';else if(!machineReturned&&newlyChecked>0)statusBox.innerHTML='<span style="color:var(--wn)">⚠️ คืนเฉพาะอุปกรณ์ — ตัวเครื่องยังไม่คืน สถานะยังเป็น "ยืม"</span>';else if(accs.length===0||accRem===0)statusBox.innerHTML='<span style="color:var(--ok)">✅ คืนครบทั้งหมด — สถานะจะเปลี่ยนเป็น "คืน"</span>';else statusBox.innerHTML='<span style="color:var(--ok)">✅ คืนตัวเครื่องแล้ว — สถานะเปลี่ยนเป็น "คืน"<br><span style="color:var(--wn);font-size:11px">⚠️ อุปกรณ์ยังค้าง '+accRem+' รายการ</span></span>';}}
 function showRetDet(){var v=document.getElementById('retRemark').value;document.getElementById('retDetGrp').style.display=(v==='ย้ายไปหน่วยวิกฤต'||v==='เครื่องมือชำรุด'||v==='อื่นๆ')?'block':'none';}
 async function saveReturn(){var recID=S(document.getElementById('retRecID').value);var receiver=getStaff('receiver');var remark=document.getElementById('retRemark').value;var detail=document.getElementById('retDet').value.trim();var date=document.getElementById('retDate').value;if(!recID||!receiver||!remark||!date){bigToast('กรุณากรอกข้อมูลให้ครบถ้วน','error');return;}var machineCb=document.getElementById('retMachineCb');var machineReturned=_retBorrowData.machineAlreadyReturned||(machineCb&&machineCb.checked);var accs=_retBorrowData.accs,retAccs=_retBorrowData.retAccs;var newRetAccs=[];accs.forEach(function(a){var cb=document.getElementById('retcb_'+a.id);if(cb&&cb.checked)newRetAccs.push({id:a.id,name:a.name||'',no:a.no||'',date:date});});if(_retBorrowData.machineAlreadyReturned&&newRetAccs.length===0){bigToast('กรุณาเลือกอุปกรณ์ที่ต้องการคืน','error');return;}if(!machineReturned&&newRetAccs.length===0){bigToast('กรุณาเลือกรายการที่ต้องการคืน','error');return;}var totalAccAfter=retAccs.length+newRetAccs.length;var allAccRet=(accs.length===0)||(totalAccAfter>=accs.length);try{await API.returnEquipment(recID,{receiverName:receiver,returnRemark:remark,returnDetail:detail,returnDate:date,newReturnedAccs:newRetAccs,machineReturned,allReturned:machineReturned});var msg,typ;if(_retBorrowData.machineAlreadyReturned){msg=allAccRet?'คืนอุปกรณ์ครบแล้ว!':'บันทึกคืนอุปกรณ์ '+newRetAccs.length+' รายการ';typ='success';}else if(machineReturned){var accMsg=accs.length>0&&!allAccRet?'\nอุปกรณ์ยังค้าง '+(accs.length-totalAccAfter)+' รายการ':'';msg='คืนสำเร็จ! สถานะเปลี่ยนเป็น "คืน"'+accMsg;typ='success';}else{msg='บันทึกคืนอุปกรณ์ '+newRetAccs.length+' รายการ\nตัวเครื่องยังไม่คืน';typ='warning';}bigToast(msg,typ);closeM('mReturn');var _retLID=_retBorrowData.loanID||'';setTimeout(async function(){await loadAll();if(_retLID)await autoRecalcLoan(_retLID);},800);}catch(e){bigToast('บันทึกการคืนล้มเหลว\n'+e.message,'error');}}
 function openReturnAcc(recID,loanID,idx){openReturn(recID,loanID,idx);var mttl=document.querySelector('#mReturn .mttl');if(mttl)mttl.textContent='📦 คืนอุปกรณ์ที่ค้าง';var ri=document.getElementById('retInfo');if(ri)ri.innerHTML+='<div style="margin-top:6px;padding:5px 8px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:4px;font-size:12px;color:var(--ok)">✓ ตัวเครื่องคืนแล้ว — กรุณาเลือกอุปกรณ์ที่ต้องการคืนเพิ่ม</div>';}
-function openTransfer(recID,fromDept,loanID,idx){if(!recID){toast('ไม่พบข้อมูลการยืม','error');return;}document.getElementById('trRecID').value=recID;document.getElementById('transfererSel').value='';document.getElementById('transfererOth').style.display='none';['trDeptCode','trDeptName','trDeptSearch'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('trDeptDisp').style.display='none';document.getElementById('trNote').value='โอนจาก '+fromDept;document.getElementById('trDate').value=new Date().toISOString().split('T')[0];var loan=loans.find(function(l){return S(l.LoanID)===S(loanID);});var bw=borrows?borrows.find(function(b){return S(b.RecordID)===S(recID);}):null;var trailSection=bw&&bw.TransferHistory&&bw.TransferHistory.length&&loan?'<div style="margin-top:7px">'+buildTransferTrail(loan,bw)+'</div>':'';var eq=loan?(loan.EquipmentList||[])[idx]:null;document.getElementById('trInfo').innerHTML=(eq?'🔧 <strong>'+ES(eq.name)+'</strong> | แผนกปัจจุบัน: <span style="color:var(--ac)">'+esc(fromDept)+'</span>':'')+trailSection;openM('mTransfer');}
+function openTransfer(recID,fromDept,loanID,idx){if(!recID){toast('ไม่พบข้อมูลการยืม','error');return;}document.getElementById('trRecID').value=recID;document.getElementById('transfererSel').value='';document.getElementById('transfererOth').style.display='none';['trDeptCode','trDeptName','trDeptSearch'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('trDeptDisp').style.display='none';document.getElementById('trNote').value='โอนจาก '+fromDept;document.getElementById('trDate').value=localDateStr(new Date());var loan=loans.find(function(l){return S(l.LoanID)===S(loanID);});var bw=borrows?borrows.find(function(b){return S(b.RecordID)===S(recID);}):null;var trailSection=bw&&bw.TransferHistory&&bw.TransferHistory.length&&loan?'<div style="margin-top:7px">'+buildTransferTrail(loan,bw)+'</div>':'';var eq=loan?(loan.EquipmentList||[])[idx]:null;document.getElementById('trInfo').innerHTML=(eq?'🔧 <strong>'+ES(eq.name)+'</strong> | แผนกปัจจุบัน: <span style="color:var(--ac)">'+esc(fromDept)+'</span>':'')+trailSection;openM('mTransfer');}
 async function saveTransfer(){var recID=S(document.getElementById('trRecID').value);var transferer=getStaff('transferer');var toCode=S(document.getElementById('trDeptCode').value);var toDept=S(document.getElementById('trDeptName').value);var date=document.getElementById('trDate').value;var note=document.getElementById('trNote').value;if(!transferer){toast('กรุณาเลือกผู้โอน','error');return;}if(!toCode){toast('กรุณาเลือกแผนกที่โอนไป','error');return;}try{var _fromDept=S(document.getElementById('trNote').value).replace(/^โอนจาก\s*/,'');await API.transferEquipment(recID,{date,fromDept:_fromDept,toDept,toDeptCode:toCode,note,transfererName:transferer});toast('โอนสำเร็จ!');closeM('mTransfer');setTimeout(loadAll,2000);}catch(e){toast('เกิดข้อผิดพลาด: '+e.message,'error');}}
 
 // ── Daily Summary Cards ───────────────────────────────────────
@@ -3827,8 +3851,12 @@ function _getAllItems(){
       if(te&&hm>te)return false;
     }
     var txt=S(item.loan.LoanID)+' '+S(item.loan.BorrowerName)+' '+S(item.loan.DeptName)+' '+S(item.loan.PatientName)+' '+S(item.eq.name)+' '+(item.borrow?S(item.borrow.EquipmentNo):'');
-    return!search||txt.toLowerCase().includes(search);
+    if(!search)return true;
+    var txt2=S(item.loan.LoanID)+' '+S(item.loan.BorrowerName)+' '+S(item.loan.DeptName)+' '+S(item.loan.PatientName)+' '+S(item.eq.name)+' '+(item.borrow?S(item.borrow.EquipmentNo):'');
+    return txt2.toLowerCase().includes(search);
   }));
+  // _exactMatchFirst: ดันผลที่ตรงเป๊ะ (เช่น หมายเลขเครื่อง) ขึ้นอันดับแรก
+  return _exactMatchFirst(items,search,function(i){return[i.loan.LoanID,i.borrow?i.borrow.EquipmentNo:'',i.loan.DeptName,i.loan.PatientName];});
 }
 function _allFilterChange(){_allPage=1;renderAll();}
 
@@ -4044,6 +4072,59 @@ function localDateStr(d){
   return _bkkFmt.format(d instanceof Date?d:new Date(d));
 }
 function bangkokNow(){return new Date();}
+window._utilSectionSetup = function(tblId, barId, peakEqName){
+  var _sc='util',_sa=false;
+  function _sortTbl(col){
+    if(_sc===col)_sa=!_sa;else{_sc=col;_sa=false;}
+    var tbody=document.querySelector('#'+tblId+' tbody');
+    if(!tbody)return;
+    var rows=Array.from(tbody.querySelectorAll('tr.snp-row'));
+    rows.sort(function(a,b){
+      var av=parseFloat(a.dataset[col])||0,bv=parseFloat(b.dataset[col])||0;
+      return _sa?av-bv:bv-av;
+    });
+    rows.forEach(function(r){tbody.appendChild(r);});
+    document.querySelectorAll('#'+tblId+' th.snp-th').forEach(function(th){
+      th.style.color=th.dataset.col===_sc?'var(--ac)':'var(--mu)';
+      var arr=th.querySelector('.sort-arrow');if(arr)arr.textContent=th.dataset.col===_sc?(_sa?'▲':'▼'):'⇅';
+    });
+  }
+  function _hlRow(eq){
+    document.querySelectorAll('.snp-row').forEach(function(r){
+      r.style.background=r.dataset.eq===eq?'rgba(0,200,255,.08)':'';
+      r.style.outline=r.dataset.eq===eq?'1px solid rgba(0,200,255,.3)':'';
+    });
+  }
+  function _filterRows(type){
+    document.querySelectorAll('.snp-card').forEach(function(c){c.style.outline=c.dataset.filter===type?'2px solid var(--ac)':'';});
+    document.querySelectorAll('.snp-row').forEach(function(r){
+      var u=r.dataset.util===''?null:parseFloat(r.dataset.util);
+      var show=type===''||
+        (type==='high'&&u!==null&&u>=50)||
+        (type==='highUtil'&&u!==null&&u>=80)||
+        (type==='lowUtil'&&u!==null&&u<20)||
+        (type==='peak'&&r.dataset.eq===peakEqName);
+      r.style.display=show?'':'none';
+    });
+  }
+  document.querySelectorAll('.snp-card').forEach(function(c){
+    c.addEventListener('click',function(){
+      var cur=c.style.outline;
+      document.querySelectorAll('.snp-card').forEach(function(x){x.style.outline='';});
+      if(cur){_filterRows('');}else{c.style.outline='2px solid var(--ac)';_filterRows(c.dataset.filter);}
+    });
+  });
+  document.querySelectorAll('.snp-row').forEach(function(r){
+    r.addEventListener('click',function(){_hlRow(r.dataset.eq);});
+    r.addEventListener('mouseenter',function(){if(!r.style.background)r.style.background='rgba(255,255,255,.03)';});
+    r.addEventListener('mouseleave',function(){if(r.style.background==='rgba(255, 255, 255, 0.03)')r.style.background='';});
+  });
+  document.querySelectorAll('#'+tblId+' th.snp-th').forEach(function(th){
+    th.style.cursor='pointer';
+    th.addEventListener('click',function(){_sortTbl(th.dataset.col);});
+  });
+};
+
 async function renderSum(r){
   var now=new Date(),sc=document.getElementById('sumCont');var _sMap={};
   if(!loans){sc.innerHTML='<div class="lding"><div class="spin"></div> กำลังโหลด...</div>';return Promise.resolve();}
@@ -4076,8 +4157,17 @@ async function renderSum(r){
     if(fDept&&S(item.loan.DeptName)!==fDept)return false;
     if(fEq&&S(item.eq.name)!==fEq)return false;
     var ld=item.loan.LoanDate||'';
-    if(fDateS&&ld&&ld<fDateS)return false;
-    if(fDateE&&ld&&ld>fDateE)return false;
+    // ถ้ากำลังยืมอยู่จริง (ACTIVE/ACC_PENDING) ให้ผ่านแม้ LoanDate จะก่อนช่วงที่กรอง
+    // เพราะเครื่องนี้ยังใช้งานอยู่จริงในช่วงเวลาที่เลือก (overlap)
+    var isActive=item.status==='ACTIVE'||item.status==='ACC_PENDING';
+    if(!isActive){
+      if(fDateS&&ld&&ld<fDateS)return false;
+      if(fDateE&&ld&&ld>fDateE)return false;
+    } else {
+      // ACTIVE: ผ่านถ้าช่วง loan ทับซ้อนกับช่วงที่เลือก
+      // (ยืมก่อน fDateE และยังไม่คืน = ใช้งานอยู่จริงในช่วงนั้น)
+      if(fDateE&&ld&&ld>fDateE)return false;
+    }
     return true;
   });
   // กราฟแท่ง — ใช้ secBarEq override
@@ -4178,7 +4268,8 @@ async function renderSum(r){
     });
     var _nDays=dayList.length;
     var _avgDay=_nDays>0?(_totB/_nDays).toFixed(1):0;
-    var _pending=_totB-_totR;
+    // _pending = รายการสถานะปัจจุบันยังไม่คืน (ไม่ติดลบ เพราะนับจากสถานะจริง)
+    var _pending=expFiltered.filter(function(item){return item.status!=='RETURNED'&&item.status!=='CANCELLED';}).length;
 
     // label ช่วงวันที่จาก Global Filter
     var _gs=fDateS||'',_ge=fDateE||'';
@@ -4537,7 +4628,7 @@ async function renderSum(r){
         +(spVals.length>0?'<circle cx="'+Math.round((spVals.length-1)*(spW/(spVals.length-1||1)))+'" cy="'+Math.round(spH-3-(spVals[spVals.length-1]||0)/spMax*(spH-6))+'" r="2.5" fill="'+e.col+'"/>':'')
         +'</svg>';
       var ak='snp_'+e.name.replace(/[^a-zA-Z0-9]/g,'_');_sMap[ak]={type:'eq',eq:e.name};
-      return'<tr class="avg-tbl-row" style="border-bottom:1px solid var(--bd)">'        +'<td style="padding:8px 10px"><div style="display:flex;align-items:center;gap:7px">'          +'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+e.col+';flex-shrink:0"></span>'          +'<strong>'+e.name+'</strong>'          +'<span style="font-size:10px;color:'+trendC+'">'+trendTxt+'</span>'        +'</div></td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu)">'+( e.inv.total||'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok);font-weight:700">'+( e.inv.active||'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--er)">'+( e.inv.inactive||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+( e.inv.forDept||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.todayVal+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok)">'+e.availableNow+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.avg+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:'+(parseFloat(e.ma7)>parseFloat(e.avg)?'var(--er)':parseFloat(e.ma7)<parseFloat(e.avg)?'var(--ok)':'var(--ac2)')+'">'+e.ma7+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+e.peak+'</td>'        +'<td style="text-align:center;padding:6px 8px">'+utilCell+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu);font-size:11px">'+e.totalDays+'</td>'        +'<td style="text-align:center">'+spSvg+'</td>'        +'<td style="text-align:center"><button class="abt svb" data-key="'+ak+'" style="border-color:var(--ac);color:var(--ac);font-size:11px">ดู</button></td>'        +'</tr>';
+      return'<tr class="avg-tbl-row" style="border-bottom:1px solid var(--bd)">'        +'<td style="padding:8px 10px"><div style="display:flex;align-items:center;gap:7px">'          +'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+e.col+';flex-shrink:0"></span>'          +'<strong>'+e.name+'</strong>'          +'<span style="font-size:10px;color:'+trendC+'">'+trendTxt+'</span>'        +'</div></td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu)">'+( e.inv.total||'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok);font-weight:700">'+( e.inv.active||'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--er)">'+( e.inv.inactive||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+( e.inv.forDept||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.todayVal+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok)">'+e.availableNow+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.avg+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:'+(parseFloat(e.ma7)>parseFloat(e.avg)?'var(--er)':parseFloat(e.ma7)<parseFloat(e.avg)?'var(--ok)':'var(--ac2)')+'">'+e.ma7+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+e.peak+(e.inv&&e.inv.active&&e.inv.active>0&&e.peak&&e.peak!=='—'?'<span style="font-size:10px;color:'+(parseFloat(e.peak)/e.inv.active>=0.8?'var(--er)':parseFloat(e.peak)/e.inv.active>=0.5?'var(--wn)':'var(--ok)')+';margin-left:3px">('+Math.round(parseFloat(e.peak)/e.inv.active*1000)/10+'%)</span>':'')+'</td>'        +'<td style="text-align:center;padding:6px 8px">'+utilCell+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu);font-size:11px">'+e.totalDays+'</td>'        +'<td style="text-align:center">'+spSvg+'</td>'        +'<td style="text-align:center"><button class="abt svb" data-key="'+ak+'" style="border-color:var(--ac);color:var(--ac);font-size:11px">ดู</button></td>'        +'</tr>';
     }).join('');
 
     // ── Utilization summary ──
@@ -4598,21 +4689,31 @@ async function renderSum(r){
         var _barH=Math.max(200,snapStats.length*44+80);
 
         // ── 4 summary cards (คลิกกรอง) ──
+          // คำนวณชนิดที่ใช้งานสูง/ต่ำ สำหรับ KPI cards
+          var _highUtilList=_utilList.filter(function(e){return e.utilPct>=80;});
+          var _lowUtilList=_utilList.filter(function(e){return e.utilPct<20;});
+          function _kpiNames(list){
+            var names=list.map(function(e){return e.name;});
+            if(names.length<=3)return names.join(', ');
+            return names.slice(0,3).join(', ')+' +'+( names.length-3)+' อื่นๆ';
+          }
         var _cards='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px">'
           +'<div class="snp-card" data-filter="" style="background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:border .15s">'
             +'<div style="font-size:11px;color:var(--mu);margin-bottom:6px">วันที่มีข้อมูล</div>'
             +'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--tx);line-height:1">'+_snapDayCount+'</div>'
             +'<div style="font-size:11px;color:var(--mu);margin-top:4px">วัน</div>'
           +'</div>'
-          +'<div class="snp-card" data-filter="" style="background:rgba(0,200,255,.07);border:1px solid rgba(0,200,255,.2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:border .15s">'
-            +'<div style="font-size:11px;color:var(--mu);margin-bottom:6px">AVG On Loan รวม</div>'
-            +'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--ac);line-height:1">'+_totalAvgOnLoan.toFixed(1)+'</div>'
-            +'<div style="font-size:11px;color:var(--mu);margin-top:4px">เครื่อง/วัน</div>'
+          +'<div class="snp-card" data-filter="highUtil" style="background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:border .15s" title="ใช้งานสูง &gt;80%  คลิกเพื่อกรอง">'
+            +'<div style="font-size:11px;color:var(--er);font-weight:600;margin-bottom:6px">ใช้งานสูง (&gt;80%)</div>'
+            +'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--er);line-height:1">'+_highUtilList.length+'</div>'
+            +'<div style="font-size:10px;color:var(--mu);margin-top:4px;word-break:break-word">'+(_highUtilList.length?_kpiNames(_highUtilList):'ไม่มี')+'</div>'
+            +'<div style="font-size:9px;color:var(--er);margin-top:3px;opacity:.8">▼ กรอง</div>'
           +'</div>'
-          +'<div class="snp-card" data-filter="high" style="background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:border .15s" title="คลิกเพื่อดูเฉพาะ Utilization สูง (&gt;50%)">'
-            +'<div style="font-size:11px;color:var(--mu);margin-bottom:6px">Utilization เฉลี่ย</div>'
-            +'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--wn);line-height:1">'+(_avgUtil!==null?_avgUtil:'—')+'</div>'
-            +'<div style="font-size:11px;color:var(--mu);margin-top:4px">% ของ Active <span style="font-size:9px;opacity:.7">▼ กรอง</span></div>'
+          +'<div class="snp-card" data-filter="lowUtil" style="background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:border .15s" title="ใช้งานต่ำ &lt;20%  คลิกเพื่อกรอง">'
+            +'<div style="font-size:11px;color:var(--ok);font-weight:600;margin-bottom:6px">ใช้งานต่ำ (&lt;20%)</div>'
+            +'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--ok);line-height:1">'+_lowUtilList.length+'</div>'
+            +'<div style="font-size:10px;color:var(--mu);margin-top:4px;word-break:break-word">'+(_lowUtilList.length?_kpiNames(_lowUtilList):'ไม่มี')+'</div>'
+            +'<div style="font-size:9px;color:var(--ok);margin-top:3px;opacity:.8">▼ กรอง</div>'
           +'</div>'
           +'<div class="snp-card" data-filter="peak" style="background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:border .15s" title="คลิกเพื่อ highlight เครื่องที่ Peak สูงสุด">'
             +'<div style="font-size:11px;color:var(--mu);margin-bottom:6px">สูงสุด (Peak)</div>'
@@ -4644,7 +4745,7 @@ async function renderSum(r){
               +e.name
             +'</td>'
             +'<td style="text-align:center;font-family:var(--mo);color:var(--ac);font-weight:700;font-size:14px">'+parseFloat(e.avg).toFixed(1)+'</td>'
-            +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:var(--tx)">'+e.peak+'</td>'
+            +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:var(--tx)">'+e.peak+(e.inv&&e.inv.active&&e.inv.active>0&&e.peak&&e.peak!=='—'?'<span style="font-size:10px;color:'+(parseFloat(e.peak)/e.inv.active>=0.8?'var(--er)':parseFloat(e.peak)/e.inv.active>=0.5?'var(--wn)':'var(--ok)')+';display:block">('+Math.round(parseFloat(e.peak)/e.inv.active*1000)/10+'%)</span>':'')+'</td>'
             +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:#15803d">'+( e.inv.active||'—')+'</td>'
             +'<td style="padding:8px 10px;min-width:160px">'+uCell+'</td>'
             +'<td style="text-align:center;font-size:12px">'+trendTxt+'</td>'
@@ -4662,67 +4763,6 @@ async function renderSum(r){
 
         // ── sort state (เก็บไว้ใน closure) ──
         var _sortCol='util',_sortAsc=false;
-
-        // ── interactive JS (inject หลัง render) ──
-        var _js='<script>(function(){'
-          // sort ตาราง
-          +'var _sc="util",_sa=false;'
-          +'function _sortTbl(col){'
-            +'if(_sc===col)_sa=!_sa;else{_sc=col;_sa=false;}'
-            +'var tbody=document.querySelector("#'+_tblId+' tbody");'
-            +'if(!tbody)return;'
-            +'var rows=Array.from(tbody.querySelectorAll("tr.snp-row"));'
-            +'rows.sort(function(a,b){'
-              +'var av=parseFloat(a.dataset[col])||0,bv=parseFloat(b.dataset[col])||0;'
-              +'return _sa?av-bv:bv-av;'
-            +'});'
-            +'rows.forEach(function(r){tbody.appendChild(r);});'
-            +'document.querySelectorAll("#'+_tblId+' th.snp-th").forEach(function(th){'
-              +'th.style.color=th.dataset.col===_sc?"var(--ac)":"var(--mu)";'
-              +'th.querySelector(".sort-arrow").textContent=th.dataset.col===_sc?(_sa?"▲":"▼"):"⇅";'
-            +'});'
-          +'}'
-          // highlight row + highlight bar
-          +'function _hlRow(eq){'
-            +'document.querySelectorAll(".snp-row").forEach(function(r){'
-              +'r.style.background=r.dataset.eq===eq?"rgba(0,200,255,.08)":"";'
-              +'r.style.outline=r.dataset.eq===eq?"1px solid rgba(0,200,255,.3)":"";'
-            +'});'
-          +'}'
-          // filter rows
-          +'function _filterRows(type){'
-            +'document.querySelectorAll(".snp-card").forEach(function(c){c.style.outline=c.dataset.filter===type?"2px solid var(--ac)":"";});'
-            +'document.querySelectorAll(".snp-row").forEach(function(r){'
-              +'var u=parseFloat(r.dataset.util)||0;'
-              +'var show=type===""||'
-                +'(type==="high"&&u>=50)||'
-                +'(type==="peak"&&r.dataset.eq===document.getElementById("'+_barId+'").dataset.peak);'
-              +'r.style.display=show?"":"none";'
-            +'});'
-          +'}'
-          // bind card clicks
-          +'document.querySelectorAll(".snp-card").forEach(function(c){'
-            +'c.addEventListener("click",function(){'
-              +'var cur=c.style.outline;'
-              +'document.querySelectorAll(".snp-card").forEach(function(x){x.style.outline="";});'
-              +'if(cur){_filterRows("");}else{c.style.outline="2px solid var(--ac)";_filterRows(c.dataset.filter);}'
-            +'})'
-          +'});'
-          // bind row clicks
-          +'document.querySelectorAll(".snp-row").forEach(function(r){'
-            +'r.addEventListener("click",function(){_hlRow(r.dataset.eq);});'
-            +'r.addEventListener("mouseenter",function(){if(!r.style.background||r.style.background==="")r.style.background="rgba(255,255,255,.03)";});'
-            +'r.addEventListener("mouseleave",function(){if(r.style.background==="rgba(255, 255, 255, 0.03)")r.style.background="";});'
-          +'});'
-          // bind th sort clicks
-          +'document.querySelectorAll("#'+_tblId+' th.snp-th").forEach(function(th){'
-            +'th.style.cursor="pointer";'
-            +'th.addEventListener("click",function(){_sortTbl(th.dataset.col);});'
-          +'});'
-          // store peak eq name on canvas for filter
-          +'var cv=document.getElementById("'+_barId+'");'
-          +'if(cv)cv.dataset.peak="'+(_peakEq?_peakEq.name.replace(/"/g,''):'')+'";'
-        +'})()</s'+'cript>';
 
         return '<div style="background:var(--s1);border:1px solid var(--bd);border-radius:10px;overflow:hidden">'
           +'<div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
@@ -4758,8 +4798,9 @@ async function renderSum(r){
               +'<canvas id="'+_barId+'" role="img" aria-label="Horizontal bar chart utilization per equipment"></canvas>'
             +'</div>'
           +'</div>'
-          +_js
         +'</div>';
+      // เก็บ params ไว้ให้ setTimeout เรียก _utilSectionSetup หลัง DOM render
+      window._utilSectionParams={tblId:_tblId,barId:_barId,peak:_peakEq?_peakEq.name:''};
       })()
       +'</div>';
   }
@@ -5846,15 +5887,80 @@ async function renderSum(r){
     +'<div id="hfncSetCont"></div>'
     +'</div>';
 
+  // ── ตารางเทียบยี่ห้อ/รุ่น HFNC รายเดือน ──────────────────────
+  window._renderHfncSetMonthly = function(){
+    var cont=document.getElementById('hfncCmpTbl');if(!cont)return;
+    var yrEl=document.getElementById('hfncCmpYear');
+    var _sets=_hfncSetGet();
+    var SET_DEFS=_sets.map(function(s){
+      return{id:s.id,label:s.label,color:s.color,match:function(no){
+        var n=parseInt(no,10);
+        for(var i=0;i<s.ranges.length;i++){if(!isNaN(n)&&n>=s.ranges[i].from&&n<=s.ranges[i].to)return true;}
+        for(var j=0;j<s.named.length;j++){if((no||'').trim().toLowerCase()===s.named[j].toLowerCase())return true;}
+        return false;
+      }};
+    });
+    var yrsFound={};
+    expanded().forEach(function(item){
+      if(S(item.eq.name)!=='HFNC')return;
+      var ld=item.loan.LoanDate||'';
+      if(ld.length>=4)yrsFound[ld.substring(0,4)]=1;
+    });
+    var yrsList=Object.keys(yrsFound).sort().reverse();
+    if(yrEl&&yrEl.options.length!==yrsList.length){
+      var curYr=yrEl.value;
+      yrEl.innerHTML=yrsList.map(function(y){return'<option value="'+y+'">'+'ปี '+(parseInt(y)+543)+'</option>';}).join('');
+      if(yrsList.indexOf(curYr)!==-1)yrEl.value=curYr;
+    }
+    var yr=(yrEl&&yrEl.value)||yrsList[0]||'';
+    if(!yr){cont.innerHTML='<div style="text-align:center;padding:20px;color:var(--mu);font-size:12px">ไม่มีข้อมูล HFNC</div>';return;}
+    var MO=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    var counts={};SET_DEFS.forEach(function(s){counts[s.id]=Array(12).fill(0);});
+    expanded().forEach(function(item){
+      if(S(item.eq.name)!=='HFNC')return;
+      if(!item.borrow)return;
+      if(item.status==='PENDING'||item.status==='CANCELLED')return;
+      var ld=item.loan.LoanDate||'';
+      if(ld.substring(0,4)!==yr)return;
+      var m=parseInt(ld.substring(5,7),10)-1;if(m<0||m>11)return;
+      var eqNo=S(item.borrow.EquipmentNo).trim();
+      SET_DEFS.forEach(function(s){if(s.match(eqNo))counts[s.id][m]++;});
+    });
+    var rowsHtml=SET_DEFS.map(function(s){
+      var arr=counts[s.id];var total=arr.reduce(function(a,b){return a+b;},0);
+      return'<tr><td style="padding:5px 8px;color:'+s.color+';font-weight:600;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';display:inline-block;margin-right:5px"></span>'+esc(s.label)+'</td>'
+        +arr.map(function(v){return'<td style="text-align:center;padding:5px 4px;color:'+(v>0?'var(--tx)':'var(--mu)')+'">'+( v||'—')+'</td>';}).join('')
+        +'<td style="text-align:center;padding:5px 8px;font-weight:700;color:var(--ac)">'+total+'</td></tr>';
+    }).join('');
+    cont.innerHTML='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap">'
+      +'<thead><tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:5px 8px;color:var(--mu)">ยี่ห้อ/รุ่น</th>'
+      +MO.map(function(m){return'<th style="text-align:center;padding:5px 4px;color:var(--mu)">'+m+'</th>';}).join('')
+      +'<th style="text-align:center;padding:5px 8px;color:var(--ac)">รวม</th></tr></thead>'
+      +'<tbody>'+rowsHtml+'</tbody></table></div>';
+  };
+
+  var _hfncCmpHtml='<div class="card" style="margin-top:12px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
+      +'<div class="ctitle" style="margin:0">📅 เทียบยี่ห้อ/รุ่น รายเดือน (HFNC)</div>'
+      +'<select id="hfncCmpYear" onchange="window._renderHfncSetMonthly&&window._renderHfncSetMonthly()" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--bd);border-radius:4px;color:var(--tx)"></select>'
+    +'</div>'
+    +'<div id="hfncCmpTbl"></div>'
+    +'</div>';
+
   // trigger render after DOM ready
-  setTimeout(function(){if(window._renderHfncSection)window._renderHfncSection();},50);
+  setTimeout(function(){
+    if(window._renderHfncSection)window._renderHfncSection();
+    if(window._renderHfncSetMonthly)window._renderHfncSetMonthly();
+    if(window._utilSectionSetup&&window._utilSectionParams)
+      window._utilSectionSetup(window._utilSectionParams.tblId,window._utilSectionParams.barId,window._utilSectionParams.peak);
+  },50);
 
   // ── รวบรวม pending charts ก่อน set innerHTML ──
   var _pendingCharts=window._ucDrawPending||{};
   window._ucDrawPending={};
   window._cmpSnap=dailyActiveByEq;
 
-  sc.innerHTML=chartHtml+_daySumHtml+dayTableHtml+avgHtml+_hfncSetHtml+origHtml+allLoansHtml;
+  sc.innerHTML=chartHtml+_daySumHtml+dayTableHtml+avgHtml+_hfncSetHtml+_hfncCmpHtml+origHtml+allLoansHtml;
 
   // ── draw utilization charts หลัง innerHTML set เสร็จ (canvas อยู่ใน DOM แล้ว) ──
   if(Object.keys(_pendingCharts).length>0){
@@ -6045,6 +6151,18 @@ function _cmpLoanByMonth(eqName,yr){
   });
   return byMonth;
 }
+function _cmpActiveCount(eqName){
+  if(!window._EQ_INV)return 0;
+  var n=(eqName||'').trim().toLowerCase();
+  var found=window._EQ_INV.find(function(eq){return(eq.name||'').trim().toLowerCase()===n;});
+  return found?Math.max(0,(found.total||0)-(found.inactive||0)-(found.forDept||0)):0;
+}
+function _cmpUtilByMonth(eqName,yr){
+  var active=_cmpActiveCount(eqName);
+  var avgArr=_cmpAvgByMonth(eqName,yr);
+  if(active<=0)return avgArr.map(function(){return null;});
+  return avgArr.map(function(v){return v!==null?Math.round(v/active*1000)/10:null;});
+}
 function _cmpDraw(){
   if(!loans)return;
   var eqEl=document.getElementById('cmpEq');if(!eqEl)return;
@@ -6100,12 +6218,17 @@ function _cmpDraw(){
   if(mode==='monthly'){
     _cmpMk('cmpC1',{type:'line',data:{labels:MO,datasets:yrs.map(function(yr,i){return{label:(parseInt(yr)+543)+'',data:_cmpAvgByMonth(eqName,yr),borderColor:CLR[Math.min(i,4)],backgroundColor:CLR[Math.min(i,4)]+'22',borderDash:DASH[Math.min(i,4)],borderWidth:2,pointRadius:3,tension:0.3,spanGaps:false};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{autoSkip:false,maxRotation:0,font:{size:10},color:TC},grid:{color:GC}},y:{title:{display:true,text:'เครื่อง/วัน',font:{size:10},color:TC},beginAtZero:false,ticks:{color:TC},grid:{color:GC}}}}});
     _cmpMk('cmpC2',{type:'bar',data:{labels:MO,datasets:yrs.map(function(yr,i){return{label:(parseInt(yr)+543)+'',data:_cmpLoanByMonth(eqName,yr),backgroundColor:CLR[Math.min(i,4)]+'99',borderColor:CLR[Math.min(i,4)],borderWidth:1};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{autoSkip:false,maxRotation:0,font:{size:10},color:TC},grid:{display:false}},y:{title:{display:true,text:'ครั้ง',font:{size:10},color:TC},beginAtZero:true,ticks:{color:TC},grid:{color:GC}}}}});
+    var t3El=document.getElementById('cmpT3');if(t3El)t3El.textContent=eqName+' — Utilization (%)';
+    _cmpMk('cmpC3',{type:'line',data:{labels:MO,datasets:yrs.map(function(yr,i){return{label:(parseInt(yr)+543)+'',data:_cmpUtilByMonth(eqName,yr),borderColor:CLR[Math.min(i,4)],backgroundColor:CLR[Math.min(i,4)]+'22',borderDash:DASH[Math.min(i,4)],borderWidth:2,pointRadius:3,tension:0.3,spanGaps:false};})},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{autoSkip:false,maxRotation:0,font:{size:10},color:TC},grid:{color:GC}},y:{title:{display:true,text:'%',font:{size:10},color:TC},beginAtZero:true,ticks:{color:TC,callback:function(v){return v+'%';}},grid:{color:GC}}}}});
   }else{
     var yrLbls=yrs.map(function(yr){return(parseInt(yr)+543)+'';});
     var yrAvg=yrs.map(function(yr){var a=_cmpAvgByMonth(eqName,yr).filter(function(v){return v!==null;});return a.length?Math.round(a.reduce(function(x,y){return x+y;},0)/a.length*10)/10:null;});
     var yrCnt=yrs.map(function(yr){var a=_cmpLoanByMonth(eqName,yr).filter(function(v){return v!==null;});return a.length?a.reduce(function(x,y){return x+y;},0):null;});
     _cmpMk('cmpC1',{type:'bar',data:{labels:yrLbls,datasets:[{data:yrAvg,backgroundColor:yrs.map(function(_,i){return CLR[Math.min(i,4)]+'bb';}),borderColor:yrs.map(function(_,i){return CLR[Math.min(i,4)];}),borderWidth:1.5,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'เครื่อง/วัน',font:{size:10},color:TC},beginAtZero:true,ticks:{color:TC},grid:{color:GC}},x:{ticks:{color:TC}}}}});
     _cmpMk('cmpC2',{type:'bar',data:{labels:yrLbls,datasets:[{data:yrCnt,backgroundColor:yrs.map(function(_,i){return CLR[Math.min(i,4)]+'bb';}),borderColor:yrs.map(function(_,i){return CLR[Math.min(i,4)];}),borderWidth:1.5,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'ครั้ง',font:{size:10},color:TC},beginAtZero:true,ticks:{color:TC},grid:{color:GC}},x:{ticks:{color:TC}}}}});
+    var yrUtil=yrs.map(function(yr){var a=_cmpUtilByMonth(eqName,yr).filter(function(v){return v!==null;});return a.length?Math.round(a.reduce(function(x,y){return x+y;},0)/a.length*10)/10:null;});
+    var t3El2=document.getElementById('cmpT3');if(t3El2)t3El2.textContent=eqName+' — Utilization (% เฉลี่ยรายปี)';
+    _cmpMk('cmpC3',{type:'bar',data:{labels:yrLbls,datasets:[{data:yrUtil,backgroundColor:yrs.map(function(_,i){return CLR[Math.min(i,4)]+'bb';}),borderColor:yrs.map(function(_,i){return CLR[Math.min(i,4)];}),borderWidth:1.5,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{title:{display:true,text:'%',font:{size:10},color:TC},beginAtZero:true,ticks:{color:TC,callback:function(v){return v+'%';}},grid:{color:GC}},x:{ticks:{color:TC}}}}});
   }
 
   // ─── ตารางใหญ่: ทุกเครื่องมือ × ทุกปี ───
@@ -6919,10 +7042,35 @@ function openEditBorrow(recID){
   document.getElementById('admEditRetRemark').value=S(b.ReturnRemark||'');
   document.getElementById('admEditRecStatus').value=S(b.Status);
   document.getElementById('admEditMachineRet').value=b.MachineReturned?'true':'false';
+  // โหลดช่องแก้เลขอุปกรณ์ประกอบ (เฉพาะที่มีจริงในรายการ)
+  var _accs=b.Accessories||[];
+  var _accListEl=document.getElementById('admEditAccList');
+  var _accInputsEl=document.getElementById('admEditAccInputs');
+  if(_accs.length>0&&_accListEl&&_accInputsEl){
+    _accListEl.style.display='';
+    _accInputsEl.innerHTML=_accs.map(function(a,i){
+      return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'  
+        +'<span style="font-size:12px;color:var(--mu);min-width:200px">'+esc(a.name||'อุปกรณ์ '+i)+'</span>'
+        +'<input type="text" id="admAccNo_'+i+'" value="'+esc(a.no||'')+'" placeholder="ระบุเลข (ถ้าไม่มีให้ว่าง)" style="flex:1;padding:4px 8px;font-size:12px;background:var(--bg);border:1px solid var(--bd);border-radius:4px;color:var(--tx)">'
+        +'</div>';
+    }).join('');
+  }else if(_accListEl){
+    _accListEl.style.display='none';
+  }
   openM('mAdmEditBorrow');
 }
 async function admSaveEditBorrow(){
   var recID=S(document.getElementById('admEditRecID').value);if(!recID)return;
+  // อ่าน acc no ที่แก้ไขจากช่อง input
+  var _editRecID=S(document.getElementById('admEditRecID').value);
+  var _editBorrow=borrows?borrows.find(function(x){return S(x.RecordID)===_editRecID;}):null;
+  var _editAccs=_editBorrow?(_editBorrow.Accessories||[]):[];
+  var _newAccs=_editAccs.map(function(a,i){
+    var inp=document.getElementById('admAccNo_'+i);
+    var newNo=inp?inp.value.trim():'';
+    // ถ้าว่างเปล่าสนิท ให้เก็บ no เป็น "" ไม่ใช่ลบ field (ป้องกัน acc หายไปทั้งชิ้น)
+    return Object.assign({},a,{no:newNo});
+  });
   var body={
     loan_id:document.getElementById('admEditRecLoanID').value.trim(),
     giver_name:document.getElementById('admEditGiver').value.trim(),
@@ -6931,7 +7079,8 @@ async function admSaveEditBorrow(){
     receiver_name:document.getElementById('admEditReceiver').value.trim(),
     return_remark:document.getElementById('admEditRetRemark').value.trim(),
     status:document.getElementById('admEditRecStatus').value,
-    machine_returned:document.getElementById('admEditMachineRet').value==='true'
+    machine_returned:document.getElementById('admEditMachineRet').value==='true',
+    accessories:_editAccs.length>0?_newAccs:undefined
   };
   try{
     await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(recID),body);
