@@ -931,6 +931,8 @@ function toggleTheme(){
       <button class="btn bg sm" onclick="repairClearFilters()">✕ ล้าง</button>
       <button class="btn bg sm" onclick="repairExportCSV()">⬇ Export CSV</button>
       <button class="btn bg sm" onclick="repairExportPDF()">📄 Export PDF</button>
+      <button class="btn bg sm" onclick="document.getElementById('repairImportFile').click()" title="นำเข้าไฟล์ CSV รูปแบบเดียวกับที่ Export ออกไป — จับคู่เครื่องด้วยชนิด+เลขเครื่องกับทะเบียนที่มีอยู่ ข้ามแถวที่หาเครื่องไม่เจอหรือมีอยู่แล้ว">⬆ Import CSV</button>
+      <input type="file" id="repairImportFile" accept=".csv" style="display:none" onchange="repairImportCSV(this)">
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
       <div style="background:var(--s2);border-radius:8px;padding:10px 12px">
@@ -6074,6 +6076,11 @@ async function loadAll(){
 }
 
 function S(v){return String(v===null||v===undefined?'':v).trim();}
+// ตัดช่องว่างหัว-ท้าย + ยุบช่องว่างซ้อนกลางคำให้เหลือช่องเดียว — ใช้กับ "ชื่อชนิด
+// เครื่องมือ" ทุกจุดที่รับ free-text ก่อนบันทึก กันปัญหาพิมพ์เว้นวรรคเกินจนชื่อ
+// ดูเหมือนกันแต่เทียบ string ตรงๆ ไม่ตรง (ทำให้สถิติ/On Loan/Utilization นับพลาด
+// แบบเงียบๆ — เจอเคสจริงกับ "Oxygen flow meter with power take off")
+function normEqName(v){return String(v===null||v===undefined?'':v).trim().replace(/\s+/g,' ');}
 function N(v){var n=parseInt(String(v===null||v===undefined?'0':v),10);return isNaN(n)?0:n;}
 // HTML-escape ข้อความที่มาจากผู้ใช้ ก่อนแสดงผลผ่าน innerHTML (ป้องกัน XSS)
 // ใช้กับข้อความ free-text เช่น ชื่อผู้ป่วย/ผู้ยืม/แผนก/เครื่องมือ/หมายเหตุ ฯลฯ — ห้ามใช้กับ HTML ที่ตั้งใจสร้างเอง
@@ -6973,6 +6980,13 @@ function updateDash(){
 // SUMMARY
 // ============================================================
 async function loadSum(){
+  // รับประกันว่าทะเบียนเครื่องมือ (equipment_units) โหลด+คำนวณ Total/Active
+  // เสร็จก่อนเสมอ ก่อนสร้างรายงาน — กัน race condition เดิม: loadEquipmentUnits()
+  // ที่ loadAll() ยิงตอนโหลดหน้าเป็นแบบไม่รอ (fire-and-forget) ถ้าผู้ใช้กดเข้า
+  // แท็บสถิติเร็วเกินไปก่อนมันทำงานเสร็จ จะเห็นเลข Total/Active เป็น 0 ค้างผิดๆ
+  // (เจอเคสจริงกับ "Oxygen flow meter with power take off" — เรียกซ้ำตรงนี้
+  // ปลอดภัย ไม่มีผลข้างเคียง เพราะ loadEquipmentUnits() แค่ดึงข้อมูลใหม่ทับของเดิม)
+  if(typeof loadEquipmentUnits==='function'){try{await loadEquipmentUnits();}catch(e){}}
   initSumFilters();
   updateSumFilterBadges();
   // ถ้า filter วันที่เริ่มต้นเกินกว่า 1 ปีที่แล้ว → ดึงข้อมูลเพิ่ม
@@ -7520,7 +7534,7 @@ async function renderSum(r){
         +(spVals.length>0?'<circle cx="'+Math.round((spVals.length-1)*(spW/(spVals.length-1||1)))+'" cy="'+Math.round(spH-3-(spVals[spVals.length-1]||0)/spMax*(spH-6))+'" r="2.5" fill="'+e.col+'"/>':'')
         +'</svg>';
       var ak='snp_'+e.name.replace(/[^a-zA-Z0-9]/g,'_');_sMap[ak]={type:'eq',eq:e.name};
-      return'<tr class="avg-tbl-row" style="border-bottom:1px solid var(--bd)">'        +'<td style="padding:8px 10px"><div style="display:flex;align-items:center;gap:7px">'          +'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+e.col+';flex-shrink:0"></span>'          +'<strong>'+e.name+'</strong>'          +'<span style="font-size:10px;color:'+trendC+'">'+trendTxt+'</span>'        +'</div></td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu)">'+( e.inv.total||'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok);font-weight:700">'+( e.inv.active||'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--er)">'+( e.inv.inactive||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+( e.inv.forDept||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.todayVal+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok)">'+e.availableNow+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.avg+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:'+(parseFloat(e.ma7)>parseFloat(e.avg)?'var(--er)':parseFloat(e.ma7)<parseFloat(e.avg)?'var(--ok)':'var(--ac2)')+'">'+e.ma7+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+e.peak+'</td>'        +'<td style="text-align:center;padding:6px 8px">'+utilCell+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu);font-size:11px">'+e.totalDays+'</td>'        +'<td style="text-align:center">'+spSvg+'</td>'        +'<td style="text-align:center"><button class="abt svb" data-key="'+ak+'" style="border-color:var(--ac);color:var(--ac);font-size:11px">ดู</button></td>'        +'</tr>';
+      return'<tr class="avg-tbl-row" style="border-bottom:1px solid var(--bd)">'        +'<td style="padding:8px 10px"><div style="display:flex;align-items:center;gap:7px">'          +'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+e.col+';flex-shrink:0"></span>'          +'<strong>'+e.name+'</strong>'          +'<span style="font-size:10px;color:'+trendC+'">'+trendTxt+'</span>'        +'</div></td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu)">'+( e.inv.total!=null?e.inv.total:'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok);font-weight:700">'+( e.inv.active!=null?e.inv.active:'—')+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--er)">'+( e.inv.inactive||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+( e.inv.forDept||0)+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.todayVal+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--ok)">'+e.availableNow+'</td>'        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;font-size:15px;color:var(--ac)">'+e.avg+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:'+(parseFloat(e.ma7)>parseFloat(e.avg)?'var(--er)':parseFloat(e.ma7)<parseFloat(e.avg)?'var(--ok)':'var(--ac2)')+'">'+e.ma7+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--wn)">'+e.peak+'</td>'        +'<td style="text-align:center;padding:6px 8px">'+utilCell+'</td>'        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu);font-size:11px">'+e.totalDays+'</td>'        +'<td style="text-align:center">'+spSvg+'</td>'        +'<td style="text-align:center"><button class="abt svb" data-key="'+ak+'" style="border-color:var(--ac);color:var(--ac);font-size:11px">ดู</button></td>'        +'</tr>';
     }).join('');
 
     // ── Utilization summary ──
@@ -7636,7 +7650,7 @@ async function renderSum(r){
             +'</td>'
             +'<td style="text-align:center;font-family:var(--mo);color:var(--ac);font-weight:700;font-size:14px">'+parseFloat(e.avg).toFixed(1)+'</td>'
             +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:var(--tx)">'+e.peak+pUtxt+'</td>'
-            +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:#15803d">'+( e.inv.active||'—')+'</td>'
+            +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:#15803d">'+( e.inv.active!=null?e.inv.active:'—')+'</td>'
             +'<td style="padding:8px 10px;min-width:160px">'+uCell+'</td>'
             +'<td style="text-align:center;font-size:12px">'+trendTxt+'</td>'
             +'</tr>';
@@ -10304,7 +10318,7 @@ function startEditEq(i){
 }
 function saveEditEq(){
   if(_selEqlIdx2<0)return;
-  var name=document.getElementById('editEqName').value.trim();
+  var name=normEqName(document.getElementById('editEqName').value);
   if(!name){toast('กรุณาระบุชื่อ','error');return;}
   _wEql[_selEqlIdx2]=name;cancelEditEq();renderEqList();
   toast('แก้ไขแล้ว (ยังไม่บันทึก)','warning');
@@ -10327,7 +10341,7 @@ function moveEqItem(dir){
   var tmp=_wEql[i];_wEql[i]=_wEql[j];_wEql[j]=tmp;_selEqlIdx2=j;renderEqList();
 }
 function addEqItem(){
-  var name=document.getElementById('newEqName').value.trim();
+  var name=normEqName(document.getElementById('newEqName').value);
   if(!name){toast('กรุณาระบุชื่อ','error');return;}
   if(_wEql.includes(name)){toast('ชื่อซ้ำ','warning');return;}
   var lastIdx=_wEql.indexOf('อื่นๆ');
@@ -13326,6 +13340,101 @@ window.repairExportCSV=function(){
   });
   dlCSV(lines.join('\r\n'),'งานส่งซ่อม_'+localDateStr(new Date())+'.csv');
 };
+
+// นำเข้าไฟล์ CSV รูปแบบเดียวกับที่ repairExportCSV ออกไป (วันที่ส่ง,ประเภท,เลข,NVH No.,
+// อาการที่พบ,ผู้รายงาน,วันรับคืน,ผู้รับคืน,สถานะ) — แต่ละแถวคือ 1 งานซ่อม (sent เสมอ,
+// returned เพิ่มถ้าคอลัมน์วันรับคืนไม่ว่าง) จับคู่เครื่องด้วยชนิด+เลขเครื่องกับทะเบียนที่มีอยู่
+// (พอร์ตมาจากเวอร์ชัน EXE — ใช้ SB เดียวกัน ทำงานกับ Supabase ได้ตรงๆ ไม่ต้องแก้)
+window.repairImportCSV=async function(el){
+  var file=el.files&&el.files[0];
+  if(!file)return;
+  var text;
+  try{text=await file.text();}
+  catch(e){bigToast('อ่านไฟล์ไม่สำเร็จ: '+e.message,'error');el.value='';return;}
+
+  var allRows=_csvParse(text);
+  if(!allRows.length){bigToast('ไฟล์นี้ไม่มีข้อมูล','error');el.value='';return;}
+  var header=allRows[0].map(function(h){return h.trim();});
+  var expected=['วันที่ส่ง','ประเภท','เลข','NVH No.','อาการที่พบ','ผู้รายงาน','วันรับคืน','ผู้รับคืน','สถานะ'];
+  var idx={};expected.forEach(function(h){idx[h]=header.indexOf(h);});
+  if(idx['วันที่ส่ง']<0||idx['ประเภท']<0||idx['เลข']<0){
+    bigToast('รูปแบบไฟล์ไม่ตรง — ต้องมีคอลัมน์ "วันที่ส่ง","ประเภท","เลข" (เหมือนไฟล์ที่ Export ออกไป)','error');
+    el.value='';return;
+  }
+  var dataRows=allRows.slice(1);
+
+  if(!_repairJobsCache){
+    try{
+      var logs0=await SB.get('equipment_maintenance_log','order=event_date.asc,created_at.asc&limit=100000');
+      _repairJobsCache=_repairBuildJobs(logs0);
+    }catch(e){_repairJobsCache=[];}
+  }
+  var existingSentKeys={};
+  (_repairJobsCache||[]).forEach(function(j){
+    if(j.sent)existingSentKeys[[j.sent.equipment_type,j.sent.unit_no,j.sent.event_date,j.sent.note||''].join('‖')]=true;
+  });
+
+  var toInsertSent=[],toInsertReturned=[],skipped=[];
+  dataRows.forEach(function(r,rowIdx){
+    var type=(r[idx['ประเภท']]||'').trim();
+    var no=(r[idx['เลข']]||'').trim();
+    var sentDate=(r[idx['วันที่ส่ง']]||'').trim();
+    if(!type||!no||!sentDate){skipped.push({row:rowIdx+2,reason:'ไม่มีชนิด/เลข/วันที่ส่ง'});return;}
+    var units=(window._EQ_UNITS&&window._EQ_UNITS[type])||[];
+    var u=units.find(function(x){return S(x.unit_no)===S(no);});
+    if(!u){skipped.push({row:rowIdx+2,reason:'ไม่พบเครื่อง '+type+' No.'+no+' ในทะเบียน'});return;}
+    var note=idx['อาการที่พบ']>=0?(r[idx['อาการที่พบ']]||'').trim():'';
+    var key=[type,no,sentDate,note].join('‖');
+    if(existingSentKeys[key]){skipped.push({row:rowIdx+2,reason:'มีอยู่แล้วในระบบ (ชนิด/เลข/วันที่/อาการตรงกัน)'});return;}
+    var nvh=idx['NVH No.']>=0?(r[idx['NVH No.']]||'').trim():'';
+    var reporter=idx['ผู้รายงาน']>=0?(r[idx['ผู้รายงาน']]||'').trim():'';
+    toInsertSent.push({unit_id:u.id,equipment_type:type,unit_no:no,event_type:'sent',event_date:sentDate,
+      note:note||null,nvh_no:nvh||null,reporter:reporter||null});
+    var retDate=idx['วันรับคืน']>=0?(r[idx['วันรับคืน']]||'').trim():'';
+    if(retDate){
+      var receiver=idx['ผู้รับคืน']>=0?(r[idx['ผู้รับคืน']]||'').trim():'';
+      toInsertReturned.push({unit_id:u.id,equipment_type:type,unit_no:no,event_type:'returned',event_date:retDate,
+        note:null,receiver:receiver||null});
+    }
+  });
+
+  if(!toInsertSent.length){
+    var msg0='ไม่มีรายการที่นำเข้าได้';
+    if(skipped.length)msg0+='\n\nข้ามไป '+skipped.length+' แถว (ดูรายละเอียดใน console)';
+    if(skipped.length)console.warn('repairImportCSV ข้ามแถว:',skipped);
+    bigToast(msg0,skipped.length?'warning':'success');
+    el.value='';return;
+  }
+
+  var summary='พบในไฟล์: นำเข้างานซ่อม '+toInsertSent.length+' รายการ'
+    +(toInsertReturned.length?' (มีข้อมูลรับคืนด้วย '+toInsertReturned.length+' รายการ)':'');
+  if(skipped.length)summary+='\nข้าม '+skipped.length+' แถว (รูปแบบไม่ถูกต้อง/หาเครื่องไม่เจอ/ซ้ำ — ดูรายละเอียดที่ปุ่ม F12 → Console หลังนำเข้า)';
+  summary+='\n\nยืนยันนำเข้าหรือไม่?';
+  if(!confirm(summary)){el.value='';return;}
+  if(skipped.length)console.warn('repairImportCSV ข้ามแถว:',skipped);
+
+  var okSent=0,okReturned=0,failCount=0;
+  try{await SB.post('equipment_maintenance_log',toInsertSent);okSent=toInsertSent.length;}
+  catch(e){
+    for(var i=0;i<toInsertSent.length;i++){
+      try{await SB.post('equipment_maintenance_log',toInsertSent[i]);okSent++;}catch(e2){failCount++;}
+    }
+  }
+  if(toInsertReturned.length){
+    try{await SB.post('equipment_maintenance_log',toInsertReturned);okReturned=toInsertReturned.length;}
+    catch(e){
+      for(var j=0;j<toInsertReturned.length;j++){
+        try{await SB.post('equipment_maintenance_log',toInsertReturned[j]);okReturned++;}catch(e2){failCount++;}
+      }
+    }
+  }
+
+  await renderRepair();
+  var resultMsg='นำเข้าสำเร็จ!\nงานส่งซ่อม '+okSent+' รายการ'+(okReturned?', ข้อมูลรับคืน '+okReturned+' รายการ':'');
+  if(failCount)resultMsg+='\n⚠️ ล้มเหลว '+failCount+' รายการ (ดู console)';
+  bigToast(resultMsg,failCount?'warning':'success');
+  el.value='';
+};
 // ใช้ dlPDF ตัวเดิมที่ใช้อยู่แล้วทั่วทั้งแอป (font Arial,Tahoma,sans-serif ผ่านหน้าต่าง print ของเบราว์เซอร์)
 // เป็นวิธีเดียวกับที่ใช้ export Dashboard/รายงานอื่นอยู่แล้ว — ข้อความไทยไม่เพี้ยนเพราะไม่ได้ฝังฟอนต์เอง
 // แต่ให้เบราว์เซอร์/OS เรนเดอร์ให้ตอนกด "พิมพ์/บันทึกเป็น PDF" เอง (ต่างจากไลบรารีสร้าง PDF ฝั่ง JS
@@ -13467,6 +13576,114 @@ window.invExportAllCSV=function(){
   dlCSV(lines.join('\r\n'),'ทะเบียนเครื่องมือทั้งหมด_'+localDateStr(new Date())+'.csv');
 };
 
+// ── แปลงข้อความ CSV → array of rows (รองรับ field ที่ครอบด้วย " และมี , ปนอยู่ข้างใน) ──
+function _csvParse(text){
+  var rows=[],row=[],field='',inQuotes=false;
+  for(var i=0;i<text.length;i++){
+    var c=text[i];
+    if(inQuotes){
+      if(c==='"'){
+        if(text[i+1]==='"'){field+='"';i++;}else{inQuotes=false;}
+      }else field+=c;
+    }else{
+      if(c==='"')inQuotes=true;
+      else if(c===','){row.push(field);field='';}
+      else if(c==='\r'){/* ข้าม \r เดี๋ยวจัดการตอนเจอ \n */}
+      else if(c==='\n'){row.push(field);field='';rows.push(row);row=[];}
+      else field+=c;
+    }
+  }
+  if(field!==''||row.length){row.push(field);rows.push(row);}
+  return rows.filter(function(r){return r.length>1||r[0]!=='';});
+}
+
+// นำเข้าทะเบียนเครื่องมือจากไฟล์ CSV รูปแบบเดียวกับที่ Export ออกไป — เลขเครื่องที่
+// มีอยู่แล้วในทะเบียน (จับคู่ด้วยชนิดเครื่องมือ+เลข) จะถูก "อัปเดตสถานะ/แผนกทับ"
+// เลขใหม่ที่ไม่เคยมีจะถูก "เพิ่มเข้าทะเบียน" — ยืนยันก่อนเสมอ ไม่กระทบใบยืม-คืนจริง
+// (พอร์ตมาจากเวอร์ชัน EXE — ใช้ SB เดียวกัน ทำงานกับ Supabase ได้ตรงๆ ไม่ต้องแก้)
+window.invImportCSV=async function(el){
+  var file=el.files&&el.files[0];
+  if(!file)return;
+  var text;
+  try{text=await file.text();}
+  catch(e){bigToast('อ่านไฟล์ไม่สำเร็จ: '+e.message,'error');el.value='';return;}
+
+  var allRows=_csvParse(text);
+  if(!allRows.length){bigToast('ไฟล์นี้ไม่มีข้อมูล','error');el.value='';return;}
+  var header=allRows[0].map(function(h){return h.trim();});
+  var iType=header.indexOf('ชนิดเครื่องมือ'),iNo=header.indexOf('No.'),iStatus=header.indexOf('สถานะ'),iDept=header.indexOf('แผนกประจำ');
+  if(iType<0||iNo<0||iStatus<0){
+    bigToast('รูปแบบไฟล์ไม่ตรง — ต้องมีคอลัมน์ "ชนิดเครื่องมือ", "No.", "สถานะ" (เหมือนไฟล์ที่ Export ออกไป)','error');
+    el.value='';return;
+  }
+  var dataRows=allRows.slice(1);
+
+  var toInsert=[],toUpdate=[],skipped=[];
+  var existingMap={};
+  Object.keys(window._EQ_UNITS||{}).forEach(function(type){
+    (window._EQ_UNITS[type]||[]).forEach(function(u){existingMap[type+'‖'+S(u.unit_no)]=u;});
+  });
+
+  dataRows.forEach(function(r,rowIdx){
+    var type=(r[iType]||'').trim();
+    var no=(r[iNo]||'').trim();
+    var status=(r[iStatus]||'').trim();
+    var dept=iDept>=0?(r[iDept]||'').trim():'';
+    if(!type||!no){skipped.push({row:rowIdx+2,reason:'ไม่มีชนิดเครื่องมือหรือเลขเครื่อง'});return;}
+    if(!status)status='คงเหลือ';
+    if(_INV_STATUSES.indexOf(status)<0){skipped.push({row:rowIdx+2,reason:'สถานะ "'+status+'" ไม่ถูกต้อง (ต้องเป็น '+_INV_STATUSES.join('/')+')'});return;}
+    var key=type+'‖'+no;
+    var existing=existingMap[key];
+    if(existing){
+      if(existing.status!==status||S(existing.dept_name||'')!==dept){
+        toUpdate.push({u:existing,newStatus:status,newDept:dept});
+      }
+    }else{
+      toInsert.push({equipment_type:type,unit_no:no,status:status,dept_name:dept||null});
+    }
+  });
+
+  if(!toInsert.length&&!toUpdate.length){
+    var msg='ไม่มีรายการที่ต้องเปลี่ยนแปลง (ข้อมูลตรงกับทะเบียนอยู่แล้วทั้งหมด)';
+    if(skipped.length)msg+='\n\nข้ามไป '+skipped.length+' แถว (ดูรายละเอียดใน console)';
+    if(skipped.length)console.warn('invImportCSV ข้ามแถว:',skipped);
+    bigToast(msg,skipped.length?'warning':'success');
+    el.value='';return;
+  }
+
+  var summary='พบในไฟล์: เพิ่มใหม่ '+toInsert.length+' เครื่อง, อัปเดต '+toUpdate.length+' เครื่อง';
+  if(skipped.length)summary+='\nข้าม '+skipped.length+' แถว (รูปแบบไม่ถูกต้อง — ดูรายละเอียดที่ปุ่ม F12 → Console หลังนำเข้า)';
+  summary+='\n\nยืนยันนำเข้าหรือไม่?';
+  if(!confirm(summary)){el.value='';return;}
+
+  var okInsert=0,okUpdate=0,failCount=0;
+  if(toInsert.length){
+    try{
+      await SB.post('equipment_units',toInsert);
+      okInsert=toInsert.length;
+    }catch(e){
+      for(var i=0;i<toInsert.length;i++){
+        try{await SB.post('equipment_units',[toInsert[i]]);okInsert++;}catch(e2){failCount++;}
+      }
+    }
+  }
+  for(var j=0;j<toUpdate.length;j++){
+    try{
+      await SB.patch('equipment_units','id=eq.'+toUpdate[j].u.id,{status:toUpdate[j].newStatus,dept_name:toUpdate[j].newDept||null});
+      okUpdate++;
+    }catch(e){failCount++;}
+  }
+
+  if(typeof loadEquipmentUnits==='function')await loadEquipmentUnits();
+  if(typeof _invRecalcFromUnits==='function')_invRecalcFromUnits();
+  var b=document.getElementById('invAdminBody');if(b)b.innerHTML=_buildInvRows();
+
+  var resultMsg='นำเข้าสำเร็จ!\nเพิ่มใหม่ '+okInsert+' เครื่อง, อัปเดต '+okUpdate+' เครื่อง';
+  if(failCount)resultMsg+='\n⚠️ ล้มเหลว '+failCount+' รายการ (ดู console)';
+  bigToast(resultMsg,failCount?'warning':'success');
+  el.value='';
+};
+
 function _buildInvAdminHTML(){
   return '<div class="card">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">'
@@ -13474,7 +13691,9 @@ function _buildInvAdminHTML(){
     +'<div style="display:flex;gap:6px;flex-wrap:wrap">'
     +'<button class="btn badm sm" onclick="invSyncAllActiveLoans()" title="ไล่เทียบกับใบยืมที่ ACTIVE อยู่จริงทั้งหมด แล้วปรับสถานะยืม/คงเหลือให้ตรง — ใช้ตอนติดตั้งเฟส 2 ครั้งแรก หรือสงสัยว่าทะเบียนไม่ตรงกับใบยืมจริง">🔗 ซิงก์สถานะยืม</button>'
     +'<button class="btn bg sm" onclick="invReload()">🔄 รีเฟรช</button>'
-    +'<button class="btn bg sm" onclick="invExportAllCSV()">⬇ Export ทั้งหมด</button></div></div>'
+    +'<button class="btn bg sm" onclick="invExportAllCSV()">⬇ Export ทั้งหมด</button>'
+    +'<button class="btn bg sm" onclick="document.getElementById(\'invImportFile\').click()" title="นำเข้าไฟล์ CSV รูปแบบเดียวกับที่ Export ออกไป (คอลัมน์: ชนิดเครื่องมือ,No.,สถานะ,แผนกประจำ) — เลขที่มีอยู่แล้วจะอัปเดตสถานะ/แผนกให้ตรงไฟล์ เลขใหม่จะถูกเพิ่มเข้าทะเบียน">⬆ Import CSV</button>'
+    +'<input type="file" id="invImportFile" accept=".csv" style="display:none" onchange="invImportCSV(this)"></div></div>'
     +'<div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:var(--mu)">'
     +'Total/ซ่อม/รอจำหน่าย/For Dept นับอัตโนมัติจากทะเบียนรายเครื่อง (กด ▶ เพื่อดู/แก้รายเครื่อง) &nbsp;|&nbsp; Active = Total−ซ่อม−รอจำหน่าย−ForDept &nbsp;|&nbsp; On Loan = อัตโนมัติ &nbsp;|&nbsp; Available = Active−OnLoan'
     +'</div>'
@@ -13492,24 +13711,142 @@ function _buildInvAdminHTML(){
     +'</tr></thead>'
     +'<tbody id="invAdminBody">'+_buildInvRows()+'</tbody></table></div>'
     +'<div style="margin-top:14px;padding:14px;background:var(--s2);border-radius:8px">'
-    +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:10px">➕ เพิ่มชนิดเครื่องมือใหม่</div>'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">'
+      +'<div style="font-size:12px;font-weight:700;color:var(--tx)">➕ เพิ่มชนิดเครื่องมือใหม่</div>'
+      +'<button class="btn bg sm" onclick="invCheckNameConsistency()" title="ไล่เทียบชื่อชนิดเครื่องมือระหว่าง EQL/ตาราง Total/ทะเบียนรายเครื่อง หาชื่อที่สะกด/เว้นวรรคไม่ตรงกัน">🔍 ตรวจสอบชื่อไม่ตรงกัน</button>'
+      +'<button class="btn bg sm" onclick="invShowAuditLog()" title="ดูประวัติการเพิ่ม/ลบ/รวมชนิดเครื่องมือย้อนหลัง">📜 ดูประวัติแก้ไข</button>'
+    +'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
-    +'<div class="fg"><label>ชื่อเครื่องมือ *</label><input type="text" id="newInvName" placeholder="เช่น New Device" style="min-width:220px"></div>'
+    +'<div class="fg"><label>ชื่อเครื่องมือ *</label><input type="text" id="newInvName" list="invEqNameSuggest" placeholder="เช่น New Device" style="min-width:220px" autocomplete="off"></div>'
+    // ── datalist แนะนำชื่อจาก EQL (รายการเครื่องมือหน้ายืม) — เลือกจากที่มีอยู่แล้ว
+    // ได้เลย กันพิมพ์ชื่อเดียวกันซ้ำแต่สะกด/เว้นวรรคเพี้ยน (ดู normEqName + คำเตือน
+    // ใน invAddType) — ยังพิมพ์ชื่อใหม่เองได้ตามปกติถ้าตั้งใจเพิ่มชนิดใหม่จริง
+    +'<datalist id="invEqNameSuggest">'+(typeof EQL!=='undefined'?EQL:[]).map(function(n){return'<option value="'+esc(n)+'">';}).join('')+'</datalist>'
     +'<button class="btn badm" style="margin-bottom:3px" onclick="invAddType()">➕ เพิ่ม</button>'
-    +'</div><div style="font-size:11px;color:var(--mu);margin-top:6px">เพิ่มชนิดใหม่แล้วจะเริ่มจาก 0 เครื่อง — กด ▶ ที่แถวนั้นแล้วกด "เพิ่มเครื่องใหม่" เพื่อใส่จำนวนเครื่องจริง</div>'
+    +'</div><div style="font-size:11px;color:var(--mu);margin-top:6px">เพิ่มชนิดใหม่แล้วจะเริ่มจาก 0 เครื่อง — กด ▶ ที่แถวนั้นแล้วกด "เพิ่มเครื่องใหม่" เพื่อใส่จำนวนเครื่องจริง · 💡 พิมพ์แล้วเลือกจากรายการที่ขึ้นมาถ้ามีชนิดนี้อยู่แล้ว กันสะกด/เว้นวรรคเพี้ยน</div>'
+    +'</div>'
+    // ── กล่อง "รวมชนิดเครื่องมือที่ซ้ำ" (merge) — ใช้ตอนกด 🔍 ตรวจสอบชื่อไม่ตรงกัน
+    // แล้วเจอปัญหา เลือกชื่อ "จาก" (ตัวที่สะกดผิด/ซ้ำ) กับ "ไปเป็น" (ชื่อที่ถูกต้อง
+    // อยากเก็บไว้) ระบบย้าย equipment_units ทั้งหมดจากชื่อแรกไปรวมกับชื่อหลังให้
+    // อัตโนมัติ แทนที่จะต้องเปิด Console รันสคริปต์เองแบบที่เคยทำ
+    +'<div style="margin-top:14px;padding:14px;background:var(--s2);border-radius:8px">'
+    +'<div style="font-size:12px;font-weight:700;color:var(--tx);margin-bottom:10px">🔀 รวมชนิดเครื่องมือที่ซ้ำ (merge)</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'
+    +'<div class="fg"><label>จาก (ชื่อที่จะยุบทิ้ง)</label><select id="mergeFromName" style="min-width:220px"><option value="">— เลือกชื่อ —</option>'+_invGet().map(function(e){return'<option value="'+esc(e.name)+'">'+esc(e.name)+'</option>';}).join('')+'</select></div>'
+    +'<div class="fg"><label>ไปเป็น (ชื่อที่ถูกต้อง — จะเก็บไว้)</label><select id="mergeToName" style="min-width:220px"><option value="">— เลือกชื่อ —</option>'+_invGet().map(function(e){return'<option value="'+esc(e.name)+'">'+esc(e.name)+'</option>';}).join('')+'</select></div>'
+    +'<button class="btn bg sm" style="margin-bottom:3px;border-color:var(--wn);color:var(--wn)" onclick="invMergeTypes()">🔀 รวม</button>'
+    +'</div><div style="font-size:11px;color:var(--mu);margin-top:6px">ย้ายเครื่องทั้งหมดจากชื่อ "จาก" ไปอยู่ภายใต้ชื่อ "ไปเป็น" แล้วลบชื่อ "จาก" ทิ้ง — ใช้แก้เคสพิมพ์ชื่อเดียวกันซ้ำแต่สะกด/เว้นวรรคเพี้ยน ทำแล้วย้อนกลับเองไม่ได้ ต้องรวมกลับด้วยมือ</div>'
     +'</div></div>';
 }
 
+window.invMergeTypes=async function(){
+  var fromName=document.getElementById('mergeFromName').value;
+  var toName=document.getElementById('mergeToName').value;
+  if(!fromName||!toName){if(window.toast)window.toast('กรุณาเลือกทั้งสองชื่อ','error');return;}
+  if(fromName===toName){if(window.toast)window.toast('เลือกชื่อเดียวกันทั้งสองช่อง','error');return;}
+  var fromUnits=(window._EQ_UNITS&&window._EQ_UNITS[fromName])||[];
+  var toUnits=(window._EQ_UNITS&&window._EQ_UNITS[toName])||[];
+  // เช็คเลขเครื่องชนกันก่อนเสมอ — ถ้า unit_no ซ้ำกันระหว่างสองชื่อ การย้ายจะชน
+  // unique constraint (equipment_type+unit_no) กลางทาง ทำให้รวมได้ไม่ครบเงียบๆ
+  var toNos={};toUnits.forEach(function(u){toNos[S(u.unit_no)]=true;});
+  var clash=fromUnits.filter(function(u){return toNos[S(u.unit_no)];});
+  if(clash.length){
+    if(window.toast)window.toast('รวมไม่ได้ — เลขเครื่อง '+clash.map(function(u){return u.unit_no;}).join(', ')+' ชนกันระหว่างสองชื่อ กรุณาแก้เลขให้ไม่ซ้ำก่อน','error');
+    return;
+  }
+  if(!confirm('ย้ายเครื่อง '+fromUnits.length+' เครื่องจาก "'+fromName+'" ไปรวมกับ "'+toName+'" แล้วลบชื่อ "'+fromName+'" ทิ้ง\nทำแล้วย้อนกลับเองไม่ได้ (ต้องรวมกลับด้วยมือ) ยืนยันหรือไม่?'))return;
+  try{
+    if(fromUnits.length)await SB.patch('equipment_units','equipment_type=eq.'+encodeURIComponent(fromName),{equipment_type:toName});
+    var inv=_invGet().filter(function(e){return e.name!==fromName;});
+    if(!inv.some(function(e){return e.name===toName;}))inv.push({name:toName,total:0,inactive:0,forDept:0});
+    _invSet(inv);window._EQ_INV=inv;
+    await loadEquipmentUnits(); // โหลดใหม่ + คำนวณ total/inactive/forDept จากทะเบียนจริงให้ตรง (_invRecalcFromUnits)
+    _auditLog('merge_equipment_type',fromName,{merged_into:toName,unit_count:fromUnits.length});
+    invReload();
+    if(window.toast)window.toast('รวม "'+fromName+'" เข้ากับ "'+toName+'" เรียบร้อย ('+fromUnits.length+' เครื่อง)','success');
+  }catch(e){if(window.toast)window.toast('รวมชื่อไม่สำเร็จ: '+e.message,'error');}
+};
+
+// ══════════════════════════════════════════════════════════════
+// 📜 Audit log — บันทึกการเพิ่ม/ลบ/รวมชนิดเครื่องมือของ Admin ลงตาราง
+// admin_audit_log (ต้องรัน SQL migration สร้างตารางนี้ก่อนครั้งแรก — ถ้ายังไม่ได้
+// สร้าง ฟังก์ชันนี้จะ fail เงียบๆ ไม่กระทบการทำงานหลัก แค่ไม่มีประวัติให้ดู)
+// ══════════════════════════════════════════════════════════════
+async function _auditLog(action,targetName,detail){
+  try{await SB.post('admin_audit_log',{action:action,target_name:targetName,detail:detail||null});}
+  catch(e){console.warn('[audit log] บันทึกไม่สำเร็จ (อาจยังไม่ได้สร้างตาราง admin_audit_log):',e.message);}
+}
+window.invShowAuditLog=async function(){
+  try{
+    var rows=await SB.get('admin_audit_log','order=created_at.desc&limit=50');
+    if(!rows||!rows.length){alert('📜 ยังไม่มีประวัติการแก้ไข');return;}
+    var actLabel={add_equipment_type:'➕ เพิ่มชนิด',remove_equipment_type:'🗑 ลบชนิด',merge_equipment_type:'🔀 รวมชนิด'};
+    var lines=rows.map(function(r){
+      var dstr=new Date(r.created_at).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'});
+      var lbl=actLabel[r.action]||r.action;
+      var detailTxt=r.detail?JSON.stringify(r.detail):'';
+      return dstr+'  '+lbl+'  "'+r.target_name+'"'+(detailTxt?'  '+detailTxt:'');
+    });
+    alert('📜 ประวัติการแก้ไข '+rows.length+' รายการล่าสุด:\n\n'+lines.join('\n'));
+  }catch(e){
+    alert('ยังไม่พบตาราง admin_audit_log ในฐานข้อมูล — ต้องรัน SQL migration สร้างตารางนี้ก่อน');
+  }
+};
+
 window.invAddType=function(){
-  var name=(document.getElementById('newInvName').value||'').trim();
+  var name=normEqName(document.getElementById('newInvName').value);
   if(!name){if(window.toast)window.toast('กรุณาระบุชื่อเครื่องมือ','error');return;}
   var inv=_invGet();
   if(inv.some(function(e){return e.name===name;})){if(window.toast)window.toast('มีชื่อนี้อยู่แล้ว','warning');return;}
+  // เตือน (ไม่บล็อก) ถ้าชื่อนี้คล้ายกับชื่อใน EQL แบบเทียบไม่สนตัวพิมพ์เล็ก-ใหญ่/
+  // ช่องว่างซ้อน แต่สะกดไม่ตรงเป๊ะ — กันเคสพิมพ์เพี้ยนจนกลายเป็นคนละชื่อ (ดู normEqName)
+  var normLower=name.toLowerCase();
+  var eqlNear=(typeof EQL!=='undefined'?EQL:[]).find(function(e){return normEqName(e).toLowerCase()===normLower&&normEqName(e)!==name;});
+  if(eqlNear&&!confirm('ชื่อนี้ใกล้เคียงกับ "'+eqlNear+'" ในรายการเครื่องมือ (EQL) มาก แต่สะกดไม่ตรงเป๊ะ\nยืนยันจะเพิ่มเป็นชื่อใหม่แยกต่างหากจริงหรือไม่?\n(ถ้าตั้งใจให้เป็นชนิดเดียวกัน ให้กด "ยกเลิก" แล้วพิมพ์ให้ตรงกับ "'+eqlNear+'")')){return;}
   inv.push({name:name,total:0,inactive:0,forDept:0});
   _invSet(inv);window._EQ_INV=inv;saveConfig('inventory',inv);
+  _auditLog('add_equipment_type',name);
   document.getElementById('newInvName').value='';
   invReload();
   if(window.toast)window.toast('เพิ่มชนิด "'+name+'" แล้ว (0 เครื่อง)','success');
+};
+
+// ══════════════════════════════════════════════════════════════
+// 🔍 ตรวจสอบชื่อชนิดเครื่องมือไม่ตรงกัน — ไล่เทียบ 3 แหล่ง (EQL / ตาราง Total
+// (_EQ_INV) / ทะเบียนรายเครื่อง equipment_units) หาคู่ที่ normalize แล้วเหมือนกัน
+// (ตัดช่องว่างหัวท้าย+ยุบช่องว่างซ้อน+ไม่สนตัวพิมพ์เล็กใหญ่) แต่สะกดจริงไม่ตรงเป๊ะ
+// — เคสแบบนี้ทำให้สถิติ/On Loan/Utilization นับพลาดแบบเงียบๆ (ไม่ error ให้เห็น)
+// เพราะจุดคำนวณส่วนใหญ่เทียบชื่อแบบตรงตัวเป๊ะ ไม่ได้ normalize ก่อนเทียบ
+// ══════════════════════════════════════════════════════════════
+window.invCheckNameConsistency=function(){
+  var groups={};
+  function add(name,src){
+    if(!name)return;
+    var key=normEqName(name).toLowerCase();
+    if(!groups[key])groups[key]=[];
+    if(!groups[key].some(function(g){return g.name===name&&g.src===src;}))groups[key].push({name:name,src:src});
+  }
+  (typeof EQL!=='undefined'?EQL:[]).forEach(function(n){add(n,'EQL (รายการยืม)');});
+  _invGet().forEach(function(e){add(e.name,'ข้อมูลทั้งหมด (Total)');});
+  Object.keys(window._EQ_UNITS||{}).forEach(function(n){add(n,'ทะเบียนรายเครื่อง');});
+
+  var problems=Object.keys(groups).filter(function(key){
+    var uniq={};groups[key].forEach(function(g){uniq[g.name]=true;});
+    return Object.keys(uniq).length>1;
+  }).map(function(key){return groups[key];});
+
+  if(!problems.length){
+    if(window.toast)window.toast('✅ ตรวจแล้ว — ชื่อชนิดเครื่องมือตรงกันทุกจุด ไม่พบปัญหา','success');
+    return;
+  }
+  var msg='⚠️ พบชื่อสะกด/เว้นวรรคไม่ตรงกัน '+problems.length+' กลุ่ม:\n\n'
+    +problems.map(function(p){
+      var byName={};
+      p.forEach(function(v){(byName[v.name]=byName[v.name]||[]).push(v.src);});
+      return Object.keys(byName).map(function(n){return'  • "'+n+'"  ('+byName[n].join(', ')+')';}).join('\n');
+    }).join('\n\n');
+  console.warn('[invCheckNameConsistency] รายละเอียด:',problems);
+  alert(msg+'\n\n(ดูรายละเอียดเต็มได้ใน Console — กด F12)');
 };
 
 window.invRemoveType=async function(el){
@@ -13525,6 +13862,7 @@ window.invRemoveType=async function(el){
     delete window._EQ_UNITS[name];
     _invExpandedSet.delete(name);
     saveConfig('inventory',inv);
+    _auditLog('remove_equipment_type',name,{unit_count:units.length});
     var p=document.getElementById('adm-inv-mgr');if(p)p.innerHTML=_buildInvAdminHTML();
     if(window.toast)window.toast('ลบสำเร็จ','success');
   }catch(e){if(window.toast)window.toast('ลบไม่สำเร็จ: '+e.message,'error');}
