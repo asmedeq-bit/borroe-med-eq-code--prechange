@@ -14047,10 +14047,11 @@ window.buildInvSummaryHTML=function(){
     +'<select id="invSumType" class="inline-edit" style="min-width:220px" onchange="invSumRender()">'
     +inv.map(function(e){return'<option value="'+esc(e.name)+'">'+esc(e.name)+'</option>';}).join('')
     +'</select>'
+    +'<select id="invSumDept" class="inline-edit" style="min-width:130px" onchange="invSumRender()" title="กรองเฉพาะเครื่องที่อยู่แผนกนี้ (ยืม/ใช้ประจำแผนก) — รายชื่อดึงจากข้อมูลจริงของชนิดที่เลือกอยู่"><option value="">ทุกแผนก</option></select>'
     +'<button class="btn bg sm" onclick="invSumReload()">🔄 รีเฟรช</button>'
     +'<button class="btn bg sm" onclick="invSumExportCSV()">⬇ Export</button>'
     +'</div></div>'
-    +'<div style="font-size:11px;color:var(--mu);margin-bottom:10px">"ยืม" อ่านจากใบยืมที่ยังไม่คืนจริง (สด) &nbsp;|&nbsp; "ใช้ประจำแผนก" มาจากช่องแผนกประจำในทะเบียนรายเครื่อง</div>'
+    +'<div style="font-size:11px;color:var(--mu);margin-bottom:10px">"ยืม" อ่านจากใบยืมที่ยังไม่คืนจริง (สด) &nbsp;|&nbsp; "ใช้ประจำแผนก" มาจากช่องแผนกประจำในทะเบียนรายเครื่อง &nbsp;|&nbsp; กรองแผนกจะซ่อนกลุ่มคงเหลือ/ซ่อม/รอจำหน่าย/ว่าง (ไม่ผูกกับแผนกใด)</div>'
     +'<input type="text" id="invSumSearch" class="inline-edit" placeholder="ค้นหาเลขเครื่องหรือแผนก..." style="width:100%;box-sizing:border-box;margin-bottom:10px" oninput="invSumRender()">'
     +'<div id="invSumBody"></div>'
     +'</div>';
@@ -14064,8 +14065,31 @@ window.invSumRender=function(){
   var qEl=document.getElementById('invSumSearch');
   var q=qEl?qEl.value.trim().toLowerCase():'';
   var groups=_invSumGroups(type);
-  body.innerHTML=_INV_SUM_ORDER.map(function(label){
-    var items=groups[label]||[];
+
+  // สร้าง/รีเฟรช dropdown "แผนก" ตามชนิดเครื่องมือที่เลือกอยู่ตอนนี้ — ดึงชื่อแผนก
+  // จากข้อมูลจริง (กลุ่ม ยืม + ใช้ประจำแผนก) ไม่ใช้รายชื่อ DEPTS ตายตัว กันปัญหา
+  // แบบเดียวกับที่เจอตอนแก้ filter แผนกหน้ารายการยืม-คืน (ชื่อที่พิมพ์เอง "อื่นๆ"
+  // หาไม่เจอในรายการตายตัว) — เปลี่ยนชนิดเครื่องมือ dropdown นี้จะอัปเดตตามไปด้วย
+  var deptSel=document.getElementById('invSumDept');
+  if(deptSel){
+    var deptSet={};
+    ['ยืม','ใช้ประจำแผนก'].forEach(function(label){
+      (groups[label]||[]).forEach(function(it){if(it.dept)deptSet[it.dept]=true;});
+    });
+    var deptNames=Object.keys(deptSet).sort(function(a,b){return a.localeCompare(b,'th');});
+    var curDept=deptSel.value;
+    deptSel.innerHTML='<option value="">ทุกแผนก</option>'+deptNames.map(function(d){return'<option value="'+esc(d)+'">'+esc(d)+'</option>';}).join('');
+    if(deptNames.indexOf(curDept)!==-1)deptSel.value=curDept;
+  }
+  var deptFilter=deptSel?deptSel.value:'';
+  // เลือกแผนกแล้ว → โชว์แค่กลุ่ม "ยืม"/"ใช้ประจำแผนก" (กลุ่มที่มีแผนกจริง) ซ่อนกลุ่ม
+  // คงเหลือ/ซ่อม/รอจำหน่าย/ว่าง ไปเลย เพราะเครื่องกลุ่มนั้นไม่ผูกกับแผนกไหนอยู่แล้ว
+  var orderToShow=deptFilter?['ยืม','ใช้ประจำแผนก']:_INV_SUM_ORDER;
+
+  body.innerHTML=orderToShow.map(function(label){
+    var baseItems=groups[label]||[];
+    if(deptFilter)baseItems=baseItems.filter(function(it){return it.dept===deptFilter;});
+    var items=baseItems;
     // เรียงตามหมายเลขเสมอ (ไม่จัดกลุ่มตามแผนก) — กรองด้วยคำค้นถ้ามี ไม่เปลี่ยนลำดับ
     if(q)items=items.filter(function(it){
       return String(it.no).indexOf(q)!==-1||(it.dept&&it.dept.toLowerCase().indexOf(q)!==-1);
@@ -14080,7 +14104,7 @@ window.invSumRender=function(){
       }).join('')+'</div>')
       :'<span style="color:var(--mu);font-size:12px">'+(q?'— ไม่พบ —':'— ไม่มี —')+'</span>';
     return '<div style="margin-bottom:10px;padding:10px 12px;background:var(--s1);border:1px solid var(--bd);border-left:3px solid '+color+';border-radius:6px">'
-      +'<div style="color:'+color+';font-size:12px;font-weight:700;margin-bottom:8px">'+label+' ('+items.length+(q?'/'+(groups[label]||[]).length:'')+')</div>'
+      +'<div style="color:'+color+';font-size:12px;font-weight:700;margin-bottom:8px">'+label+' ('+items.length+(q?'/'+baseItems.length:'')+')</div>'
       +cells
       +'</div>';
   }).join('');
