@@ -5942,22 +5942,23 @@ function updateSumFilterBadges(){
 }
 
 function initSumFilters(){
-  var ds=document.getElementById('sumDept');
+  // หมายเหตุ: dropdown แผนก (sumDept/secOvDept/secAllDept) ไม่ populate ที่นี่แล้ว
+  // — ย้ายไปให้ _refreshDeptFilterOptions() จัดการแทน (เรียกครั้งเดียวหลัง loadAll()
+  // โหลดข้อมูลจริงเสร็จ) เพื่อดึงรายชื่อแผนกจากข้อมูลจริงแทน DEPTS ตายตัว กันปัญหา
+  // ชื่อแผนก "อื่นๆ" ที่พิมพ์เองหาไม่เจอ (บั๊กคลาสเดียวกับที่เคยแก้ไปแล้วในหน้าอื่น)
   var es=document.getElementById('sumEq');
-  if(ds&&ds.options.length<=1)DEPTS.forEach(function(d){ds.innerHTML+='<option value="'+d.n+'">'+d.n+'</option>';});
   if(es&&es.options.length<=1)EQL.forEach(function(e){es.innerHTML+='<option value="'+e+'">'+e+'</option>';});
-  // section override selects
+  // section override selects (เฉพาะชนิดเครื่องมือ — แผนกแยกไป _refreshDeptFilterOptions แล้ว)
   var secSelects={
     'secBarEq':'eq','secDayEq':'eq',
     'secAvgEq':'eq',
-    'secOvDept':'dept','secOvEq':'eq',
+    'secOvEq':'eq',
     'secEqdEq':'eq',
-    'secAllDept':'dept','secAllEq':'eq'
+    'secAllEq':'eq'
   };
   Object.keys(secSelects).forEach(function(id){
     var el=document.getElementById(id);if(!el||el.options.length>1)return;
-    if(secSelects[id]==='eq'){EQL.forEach(function(e){el.innerHTML+='<option value="'+e+'">'+e+'</option>';});}
-    else{DEPTS.forEach(function(d){el.innerHTML+='<option value="'+d.n+'">'+d.n+'</option>';});}
+    EQL.forEach(function(e){el.innerHTML+='<option value="'+e+'">'+e+'</option>';});
   });
 }
 
@@ -11041,13 +11042,20 @@ function rebuildRetRemarkSelect(){
 }
 
 function _refreshDeptFilterOptions(){
-  // แก้บั๊ก performance: เดิมเรียก _deptOptionsHTML() ซ้ำ 3 รอบ (1 รอบต่อ dropdown)
-  // ทั้งที่ผลลัพธ์เหมือนกันทุกครั้ง แต่ละรอบต้องสแกนใบยืมทั้งหมดในระบบ — ยิ่งข้อมูล
-  // สะสมมากยิ่งช้า ตอนนี้คำนวณครั้งเดียวแล้วใช้ซ้ำ 3 dropdown
+  // แก้บั๊ก performance: เดิมเรียก _deptOptionsHTML() ซ้ำหลายรอบทั้งที่ผลลัพธ์
+  // เหมือนกันทุกครั้ง แต่ละรอบต้องสแกนใบยืมทั้งหมดในระบบ — ยิ่งข้อมูลสะสมมากยิ่งช้า
+  // ตอนนี้คำนวณครั้งเดียวแล้วใช้ซ้ำทุก dropdown แผนก (รวมหน้าสถิติที่เพิ่มมาด้วย)
   var html=_deptOptionsHTML();
-  ['allDept','recDept','dailyDept'].forEach(function(id){
+  ['allDept','recDept','dailyDept','sumDept'].forEach(function(id){
     var el=document.getElementById(id);if(!el)return;
     var v=el.value;el.innerHTML='<option value="">ทั้งแผนก</option>'+html;
+    el.value=v;
+  });
+  // secOvDept/secAllDept (ตัวกรอง override ในหน้าสถิติ) ใช้ placeholder ข้อความ
+  // เดิมต่างจากตัวอื่น ("— ทุกรายการ —") ต้องคงไว้ตามเดิม ไม่เปลี่ยน UI โดยไม่จำเป็น
+  ['secOvDept','secAllDept'].forEach(function(id){
+    var el=document.getElementById(id);if(!el)return;
+    var v=el.value;el.innerHTML='<option value="">— ทุกรายการ —</option>'+html;
     el.value=v;
   });
 }
