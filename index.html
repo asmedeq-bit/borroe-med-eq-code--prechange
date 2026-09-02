@@ -778,7 +778,7 @@ function toggleTheme(){
       <span style="font-size:12px;color:var(--ac);text-transform:none;letter-spacing:0;font-weight:700;background:rgba(0,200,255,.08);border:1px solid rgba(0,200,255,.25);border-radius:5px;padding:2px 9px;margin-left:6px">( สำหรับ จนท.แผนกบริการเครื่องมือแพทย์ฯ )</span>
     </div>
     <div style="padding:0 14px 12px">
-      <button class="btn bp" id="openQuickBorrowBtn" onclick="openQuickBorrow()" title="ยืมได้หลายชนิด/หลายเครื่อง กรอกเลขเครื่อง+อุปกรณ์ประกอบครบในหน้าเดียว ไม่ต้องเปิดยืม-คืนแยกทีหลัง">⚡ บันทึกยืมด่วน (ครบในหน้าเดียว)</button>
+      <button class="btn bp" id="openQuickBorrowBtn" onclick="requirePin(openQuickBorrow)" title="ยืมได้หลายชนิด/หลายเครื่อง กรอกเลขเครื่อง+อุปกรณ์ประกอบครบในหน้าเดียว ไม่ต้องเปิดยืม-คืนแยกทีหลัง">⚡ บันทึกยืมด่วน (ครบในหน้าเดียว)</button>
     </div>
     <div class="fbar">
       <div class="fg"><label>ค้นหา</label><input type="text" id="recSearch" placeholder="ชื่อ, แผนก, หมายเลข..." oninput="_recFilterChange()" style="min-width:130px"></div>
@@ -5500,6 +5500,9 @@ var API = {
       var ACC_MAP=[{id:'a1',name:'Oxygen flow meter pipeline with power take off',col:'acc1_flow_meter_pto'},{id:'a2',name:'Oxygen flow meter pipeline 70 LPM',col:'acc2_flow_meter_70'},{id:'a3',name:'Self inflating bag',col:'acc3_self_inflating'},{id:'a4',name:'full face mask',col:'acc4_full_face_mask'},{id:'a5',name:'Nasal cannula HFNC',col:'acc5_nasal_cannula'},{id:'a7',name:'Oxygen flow meter regulator with power take off',col:'acc7_regulator_pto'},{id:'a6',name:'อื่นๆ',col:'acc6_other'}];
       var accs=[];
       ACC_MAP.forEach(function(a){var val=r[a.col]||'';if(val&&val.trim())accs.push({id:a.id,name:a.name,no:val==='✓'?'':val});});
+      // รวมอุปกรณ์ประกอบที่เพิ่มใหม่จากหน้า Admin (เก็บแยกในคอลัมน์ accessories jsonb
+      // เพราะ 7 คอลัมน์ตายตัวด้านบนรองรับได้แค่ 7 ชนิดเดิม)
+      if(Array.isArray(r.accessories))accs=accs.concat(r.accessories);
       var retAccs=r.returned_accs;if(!Array.isArray(retAccs))retAccs=[];
       var th=r.transfer_history;if(!Array.isArray(th))th=[];
       return{RecordID:r.record_id,LoanID:r.loan_id,GiverName:r.giver_name||'',EquipmentNo:r.equipment_no||'',EquipItemIndex:r.equip_item_index||0,Accessories:accs,ReturnRemark:r.return_remark||'',ReturnDetail:r.return_detail||'',ReturnDate:r.return_date||'',MachineReturnDate:r.machine_return_date||'',MachineReturned:r.machine_returned||false,ReturnedAccs:retAccs,TransferHistory:th,Status:r.status,ReceiverName:r.receiver_name||'',ReturnedAt:r.returned_at||''};
@@ -5515,6 +5518,7 @@ var API = {
       var ACC_MAP=[{id:'a1',name:'Oxygen flow meter pipeline with power take off',col:'acc1_flow_meter_pto'},{id:'a2',name:'Oxygen flow meter pipeline 70 LPM',col:'acc2_flow_meter_70'},{id:'a3',name:'Self inflating bag',col:'acc3_self_inflating'},{id:'a4',name:'full face mask',col:'acc4_full_face_mask'},{id:'a5',name:'Nasal cannula HFNC',col:'acc5_nasal_cannula'},{id:'a7',name:'Oxygen flow meter regulator with power take off',col:'acc7_regulator_pto'},{id:'a6',name:'อื่นๆ',col:'acc6_other'}];
       var accs=[];
       ACC_MAP.forEach(function(a){var val=r[a.col]||'';if(val&&val.trim())accs.push({id:a.id,name:a.name,no:val==='✓'?'':val});});
+      if(Array.isArray(r.accessories))accs=accs.concat(r.accessories);
       var retAccs=r.returned_accs;if(!Array.isArray(retAccs))retAccs=[];
       var th=r.transfer_history;if(!Array.isArray(th))th=[];
       return{RecordID:r.record_id,LoanID:r.loan_id,GiverName:r.giver_name||'',EquipmentNo:r.equipment_no||'',EquipItemIndex:r.equip_item_index||0,Accessories:accs,ReturnRemark:r.return_remark||'',ReturnDetail:r.return_detail||'',ReturnDate:r.return_date||'',MachineReturnDate:r.machine_return_date||'',MachineReturned:r.machine_returned||false,ReturnedAccs:retAccs,TransferHistory:th,Status:r.status,ReceiverName:r.receiver_name||'',ReturnedAt:r.returned_at||''};
@@ -5548,16 +5552,26 @@ var API = {
       if(existing.length>0){
         var eqNameNew=(data.equipmentName||'').trim().toLowerCase();
         var blocked=false;var blockMsg='';
+        // แก้ N+1 query — เดิมยิง SB.get('loan_requests',...) แยกทีละแถวในลูป (สูงสุด
+        // 10 รอบ) ตอนนี้รวบรวม loan_id ทั้งหมดที่ต้องเช็คแล้วยิงทีเดียวด้วย in.(...)
+        // (รูปแบบเดียวกับที่ใช้อยู่แล้วจุดอื่นในไฟล์ เช่น ลบ equipment_maintenance_log)
+        // จากนั้นจับคู่ผลลัพธ์ในเครื่อง ไม่ต้อง await ซ้ำในลูปอีก
+        var loanIds=existing.map(function(r){return r.loan_id;}).filter(function(v,i,a){return v&&a.indexOf(v)===i;});
+        var loanRowsMap={};
+        if(loanIds.length){
+          var loanRowsAll=await SB.get('loan_requests','loan_id=in.('+loanIds.join(',')+')');
+          loanRowsAll.forEach(function(lr){loanRowsMap[lr.loan_id]=lr;});
+        }
         for(var _i=0;_i<existing.length;_i++){
           var _rec=existing[_i];
-          var _loanRows=await SB.get('loan_requests','loan_id=eq.'+encodeURIComponent(_rec.loan_id));
-          if(_loanRows.length){
-            var _eqList=_loanRows[0].equipment_list||[];
+          var _loanRow=loanRowsMap[_rec.loan_id];
+          if(_loanRow){
+            var _eqList=_loanRow.equipment_list||[];
             var _recIdx=typeof _rec.equip_item_index==='number'?_rec.equip_item_index:0;
             var _existName=(_eqList[_recIdx]&&_eqList[_recIdx].name?_eqList[_recIdx].name:'').trim().toLowerCase();
             if(!eqNameNew||!_existName||eqNameNew===_existName){
               blocked=true;
-              blockMsg='หมายเลข "'+eqNo+'" ('+(_eqList[_recIdx]?_eqList[_recIdx].name:'?')+')\nถูกใช้งานอยู่แล้ว — แผนก: '+(_loanRows[0].dept_name||'ไม่ระบุ');
+              blockMsg='หมายเลข "'+eqNo+'" ('+(_eqList[_recIdx]?_eqList[_recIdx].name:'?')+')\nถูกใช้งานอยู่แล้ว — แผนก: '+(_loanRow.dept_name||'ไม่ระบุ');
               break;
             }
           }
@@ -5569,7 +5583,17 @@ var API = {
     if(dupItem.length>0)return{success:false,duplicate:true,error:'item #'+idx+' ของ '+loanID+' ถูกบันทึกแล้ว'};
     var ACC_ID_TO_COL={a1:'acc1_flow_meter_pto',a2:'acc2_flow_meter_70',a3:'acc3_self_inflating',a4:'acc4_full_face_mask',a5:'acc5_nasal_cannula',a7:'acc7_regulator_pto',a6:'acc6_other'};
     var row={loan_id:loanID,giver_name:data.giverName||'',equipment_no:eqNo,equip_item_index:idx,status:'ACTIVE'};
-    (data.accessories||[]).forEach(function(a){var col=ACC_ID_TO_COL[a.id];if(col)row[col]=(a.no&&a.no.trim())?a.no:'✓';});
+    // อุปกรณ์ประกอบ 7 ชนิดเดิม (a1-a7) เก็บลง 7 คอลัมน์ตายตัวแบบเดิม (ห้ามแก้ ของเก่า
+    // ผูกกับคอลัมน์พวกนี้อยู่) ส่วนอุปกรณ์ที่เพิ่มใหม่จากหน้า Admin (id เกิน a7 เช่น
+    // a8,a9,...) ไม่มีคอลัมน์ตายตัวรองรับ — เก็บลงคอลัมน์ accessories (jsonb) แทน
+    // ไม่งั้นข้อมูลจะหายเงียบๆ ตอนบันทึก (บั๊กที่เจอและแก้ในจุดนี้)
+    var extraAccs=[];
+    (data.accessories||[]).forEach(function(a){
+      var col=ACC_ID_TO_COL[a.id];
+      if(col)row[col]=(a.no&&a.no.trim())?a.no:'✓';
+      else extraAccs.push(a);
+    });
+    row.accessories=extraAccs;
     var ts=new Date();row.record_id='BR-'+ts.getFullYear()+String(ts.getMonth()+1).padStart(2,'0')+String(ts.getDate()).padStart(2,'0')+'-'+Math.random().toString(36).substr(2,8).toUpperCase();
     var inserted=await SB.post('borrow_records',row);
     return{success:true,recordID:inserted[0].record_id};
@@ -5803,6 +5827,9 @@ var _wDepts=null,_wStaff=null,_wEql=null,_wAcc=null,_wDeptDisabled=null,_wEqlDis
 var _selDeptIdx=-1,_selStaffIdx=-1,_selEqlIdx2=-1,_selAccIdx=-1;
 
 var loans=null,borrows=null,selAccs={},_rMap={},_selEqIdx=-1,_borrowEqName='';
+// ธงกันไม่ให้ _refreshDeptFilterOptions() (สแกนใบยืมทั้งหมดหาชื่อแผนก "อื่นๆ")
+// รันซ้ำทุกครั้งที่ loadAll() ถูกเรียก — ให้รันแค่ครั้งแรกที่โหลดข้อมูลสำเร็จพอ
+var _deptFilterOptionsInitDone=false;
 var _retBorrowData={accs:[],retAccs:[],recID:'',eqName:'',eqNo:'',machineAlreadyReturned:false};
 var _pinUnlocked=false,_adminUnlocked=false,arTimer=null;
 var _bulkPendingLoans=[],_bulkPendingBors=[];
@@ -5816,11 +5843,30 @@ document.addEventListener('DOMContentLoaded',async function(){
   // ก่อนสร้าง UI ที่ใช้ค่าเหล่านี้ — จำกัดเวลารอไม่เกิน 3 วิ ถ้าเน็ตช้า/Supabase ไม่พร้อม
   // จะ fallback ไปใช้ localStorage/ค่า default ตามเดิมโดยไม่กระทบการใช้งาน
   await Promise.race([loadConfig(),new Promise(function(res){setTimeout(res,3000);})]);
-  setToday();buildEqCards();buildAccTable();rebuildEqNoDatalist();rebuildRetRemarkSelect();
-  buildSSL('deptList',activeDEPTS(),function(c,n){pickDept('deptList',c,n);});
-  buildSSL('trDeptList',activeDEPTS(),function(c,n){pickDept('trDeptList',c,n);});
-  buildSSL('qbDeptList',activeDEPTS(),function(c,n){pickDept('qbDeptList',c,n);});
-  buildStaff();initFilters();_applyLoanTabVisibility();loadAll().then(function(){scheduleCircuitAlert();initNewLoanAlertBaseline();scheduleNewLoanAlert();scheduleStaleLoanAlert();});
+  // ป้องกันบั๊กคลาส "จุดเดียวพัง ลามทั้งแอปค้าง" (เจอจริงกับ _deptOptionsHTML ตอน
+  // loans=null) — ห่อแต่ละขั้นตอน init ด้วย try/catch แยกกัน ถ้าจุดไหน error จะ log
+  // ไป error_logs (ผ่าน _logErrorToServer ที่มีอยู่แล้ว) แล้ว "ทำงานต่อขั้นถัดไปทันที"
+  // แทนที่จะหยุดทั้งชุด — รับประกันว่า loadAll() (ดึงข้อมูลใบยืม-คืนจริง) ต้องถูก
+  // เรียกเสมอ ไม่ว่าขั้นตอนก่อนหน้าจะพังตรงไหนก็ตาม
+  function _safeInit(fn,label){
+    try{fn();}
+    catch(e){
+      console.error('[init:'+label+']',e);
+      if(typeof _logErrorToServer==='function')_logErrorToServer(e&&e.message?e.message:String(e),e&&e.stack,'init:'+label);
+    }
+  }
+  _safeInit(function(){setToday();},'setToday');
+  _safeInit(function(){buildEqCards();},'buildEqCards');
+  _safeInit(function(){buildAccTable();},'buildAccTable');
+  _safeInit(function(){rebuildEqNoDatalist();},'rebuildEqNoDatalist');
+  _safeInit(function(){rebuildRetRemarkSelect();},'rebuildRetRemarkSelect');
+  _safeInit(function(){buildSSL('deptList',activeDEPTS(),function(c,n){pickDept('deptList',c,n);});},'buildSSL-deptList');
+  _safeInit(function(){buildSSL('trDeptList',activeDEPTS(),function(c,n){pickDept('trDeptList',c,n);});},'buildSSL-trDeptList');
+  _safeInit(function(){buildSSL('qbDeptList',activeDEPTS(),function(c,n){pickDept('qbDeptList',c,n);});},'buildSSL-qbDeptList');
+  _safeInit(function(){buildStaff();},'buildStaff');
+  _safeInit(function(){initFilters();},'initFilters');
+  _safeInit(function(){_applyLoanTabVisibility();},'_applyLoanTabVisibility');
+  loadAll().then(function(){scheduleCircuitAlert();initNewLoanAlertBaseline();scheduleNewLoanAlert();scheduleStaleLoanAlert();});
   // fill addLoan equipment select
   var sel=document.getElementById('addLoanEq');
   activeEQL().forEach(function(e){sel.innerHTML+='<option value="'+e+'">'+e+'</option>';});
@@ -5839,7 +5885,24 @@ function setToday(){
 function buildStaff(){['giverSel','receiverSel','transfererSel','qbGiverSel'].forEach(function(id){var el=document.getElementById(id);if(!el)return;STAFF.forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=s;el.appendChild(o);});});}
 function handleStaff(p){var sel=document.getElementById(p+'Sel'),oth=document.getElementById(p+'Oth');if(!sel||!oth)return;oth.style.display=sel.value==='อื่นๆ'?'block':'none';if(sel.value!=='อื่นๆ')oth.value='';}
 function getStaff(p){var sel=document.getElementById(p+'Sel'),oth=document.getElementById(p+'Oth');if(!sel)return'';return sel.value==='อื่นๆ'?(oth?oth.value.trim():''):sel.value;}
-function initFilters(){['allDept','recDept','dailyDept'].forEach(function(id){var el=document.getElementById(id);if(!el)return;DEPTS.forEach(function(d){el.innerHTML+='<option value="'+d.n+'">'+d.n+'</option>';});});['allEq','recEq','dailyFilter'].forEach(function(id){var el=document.getElementById(id);if(!el)return;EQL.forEach(function(e){el.innerHTML+='<option value="'+e+'">'+e+'</option>';});});var _arr=document.getElementById('allRetRemark');if(_arr){RETREMARKS.forEach(function(r){_arr.innerHTML+='<option value="'+esc(r)+'">'+esc(r)+'</option>';});}}
+// ── สร้าง option ของ dropdown filter "แผนก" — รวมทั้งรายชื่อแผนกหลัก (DEPTS) และ
+// ชื่อที่เคยพิมพ์เองตอนเลือกแผนก "อื่นๆ" (เก็บอยู่ใน loan.DeptName ตรงๆ ไม่ใช่คำว่า
+// "อื่นๆ") — เดิม dropdown ดึงจาก DEPTS อย่างเดียว ทำให้กรองหาชื่อที่เคยพิมพ์เองไม่เจอ
+// เลย (ต้องพึ่งช่องค้นหาแทน) ตอนนี้แยกเป็นกลุ่มให้ชัดเจนว่าอันไหนเป็นชื่อที่เคยใช้จริง
+function _deptOptionsHTML(){
+  var mainHtml=DEPTS.map(function(d){return'<option value="'+esc(d.n)+'">'+esc(d.n)+'</option>';}).join('');
+  var mainNames={};DEPTS.forEach(function(d){mainNames[d.n]=true;});
+  var extraSet={};
+  // บั๊กที่เจอจริง: loans ตอนเปิดหน้าครั้งแรกมีค่าเป็น null (ยังไม่ undefined เพราะ
+  // ประกาศไว้แล้วแค่ยังไม่โหลดข้อมูล) เช็คแค่ typeof!=='undefined' จึงหลุดผ่านไปเรียก
+  // .forEach บน null แล้ว throw error — ทำให้ initFilters() หยุดกลางคันและ loadAll()
+  // (ที่เรียกถัดจากกันในบรรทัดเดียวกัน) ไม่เคยถูกเรียกเลย นี่คือสาเหตุจริงของอาการค้าง
+  (loans||[]).forEach(function(l){var n=S(l.DeptName);if(n&&!mainNames[n])extraSet[n]=true;});
+  var extraNames=Object.keys(extraSet).sort(function(a,b){return a.localeCompare(b,'th');});
+  var extraHtml=extraNames.length?'<optgroup label="แผนกอื่นๆ ที่เคยใช้">'+extraNames.map(function(n){return'<option value="'+esc(n)+'">'+esc(n)+'</option>';}).join('')+'</optgroup>':'';
+  return mainHtml+extraHtml;
+}
+function initFilters(){['allDept','recDept','dailyDept'].forEach(function(id){var el=document.getElementById(id);if(!el)return;el.innerHTML+=_deptOptionsHTML();});['allEq','recEq','dailyFilter'].forEach(function(id){var el=document.getElementById(id);if(!el)return;EQL.forEach(function(e){el.innerHTML+='<option value="'+e+'">'+e+'</option>';});});var _arr=document.getElementById('allRetRemark');if(_arr){RETREMARKS.forEach(function(r){_arr.innerHTML+='<option value="'+esc(r)+'">'+esc(r)+'</option>';});}}
 function clearDailyFilter(){['dailySearch','dailyDateS','dailyDateE'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});['dailyFilter','dailyDept'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});renderDaily();}
 function clearRecFilter(){['recSearch','recDateS','recDateE'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});['recEq','recDept','recStat'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});_recFilterChange();}
 function clearAllDataFilter(){['allSearch','allDateS','allDateE','allTimeS','allTimeE'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});['allDept','allEq','allStat','allRetRemark'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});_allFilterChange();}
@@ -6045,12 +6108,43 @@ function pickDept(lid,code,name){
 }
 function updateDeptOther(){var oi=document.getElementById('deptOther');var code=document.getElementById('selDeptCode').value;if(code==='9999'&&oi){var val=oi.value.trim();document.getElementById('selDeptName').value=val||'อื่นๆ';var d=document.getElementById('selDeptDisp');if(d)d.innerHTML='✅ <strong>'+(val||'อื่นๆ')+'</strong>';}}
 
+// เดิม 4 หน้าหลัก (รายการยืม-คืน/ข้อมูลทั้งหมด/สรุปรายวัน/Dashboard) render
+// พร้อมกันทีเดียวทุกครั้งที่ loadAll() เสร็จ แม้จะเห็นแค่หน้าเดียว — งาน render
+// ทั้ง 4 หน้ารวมกันเป็น JS งานหนักที่รันต่อเนื่องไม่หยุดพัก ทำให้เบราว์เซอร์ไม่มี
+// จังหวะวาดภาพ (paint) หน้าที่กำลังเปิดดูอยู่เลยจนกว่าจะ render ครบทั้ง 4 หน้า —
+// ผู้ใช้เห็นเป็น "ค้าง กำลังโหลด..." ทั้งที่จริงข้อมูลพร้อมแล้ว (สลับแท็บไปมาแล้ว
+// เห็นข้อมูลทันทีคือหลักฐาน — แค่รอจังหวะวาดภาพ ไม่ใช่รอข้อมูล) ตอนนี้ render
+// หน้าที่เปิดอยู่ก่อนเสมอ ให้เบราว์เซอร์วาดภาพได้ทันที ส่วนอีก 3 หน้าที่ซ่อนอยู่
+// (ไม่มีใครเห็น) เลื่อนไปทำทีหลังเป็นจังหวะๆ แทน
+function _renderMainPages(){
+  var order=['rec','all','daily','dash'];
+  var renderFns={rec:renderRec,all:renderAll,daily:renderDaily,dash:updateDash};
+  var activeId='rec';
+  for(var i=0;i<order.length;i++){
+    var el=document.getElementById('pg-'+order[i]);
+    if(el&&el.classList.contains('on')){activeId=order[i];break;}
+  }
+  if(renderFns[activeId])renderFns[activeId]();
+  order.filter(function(k){return k!==activeId;}).forEach(function(k,idx){
+    setTimeout(function(){if(renderFns[k])renderFns[k]();},30*(idx+1));
+  });
+}
 async function loadAll(){
   var rb=document.getElementById('recBody');if(rb)rb.innerHTML='<tr><td colspan="5"><div class="lding"><div class="spin"></div> กำลังโหลด...</div></td></tr>';
   var dc=document.getElementById('dailyCont');if(dc)dc.innerHTML='<div class="lding"><div class="spin"></div> กำลังโหลด...</div>';
   try{
     var[ld,bd]=await Promise.all([API.getAllLoans(),API.getAllBorrows()]);
     loans=ld;borrows=bd;
+    // เติมชื่อแผนก "อื่นๆ ที่เคยใช้" ใน dropdown filter — ทำแค่ "ครั้งแรก" ที่โหลด
+    // ข้อมูลสำเร็จพอ (ตอน initFilters() รันตอนเปิดหน้าครั้งแรก loans ยังว่างอยู่ จึง
+    // ต้องรีเฟรชอีกทีหลังโหลดข้อมูลจริงเสร็จรอบแรก) — ไม่ใช่ทุกครั้งที่ loadAll()
+    // ถูกเรียก (ซึ่งเกิดขึ้นหลังบันทึกยืม/คืน/โอนทุกครั้งด้วย) เพราะต้องไล่สแกน
+    // ใบยืมทั้งหมดในระบบ ยิ่งข้อมูลสะสมมากยิ่งหนัก ชื่อแผนกอื่นๆ ก็ไม่ได้เปลี่ยนบ่อย
+    // ขนาดต้องอัปเดตสดทุกวินาที (พลาดจุดนี้ไปตอนแรก ทำให้ทุกการบันทึกช้าลงโดยไม่จำเป็น)
+    if(!_deptFilterOptionsInitDone&&typeof _refreshDeptFilterOptions==='function'){
+      _deptFilterOptionsInitDone=true;
+      _refreshDeptFilterOptions();
+    }
     // โหลดทะเบียนเครื่องมือรายตัว — ไม่ await ตรงนี้ ให้ทำงานคู่ขนานแบบไม่บล็อก
     // การแสดงผลหลัก (loans/borrows สำคัญกว่า ต้องไม่ช้าเพราะรอทะเบียนเครื่องมือ)
     if(typeof loadEquipmentUnits==='function')loadEquipmentUnits().catch(function(e){console.error('loadEquipmentUnits:',e);});
@@ -6059,8 +6153,8 @@ async function loadAll(){
     // ให้อัปเดต "ใบล่าสุดที่เคยเห็น" ของระบบแจ้งเตือนด้วยเสมอ กันแจ้งเตือนใบที่เครื่องนี้เพิ่งทำเอง
     if(typeof initNewLoanAlertBaseline==='function')initNewLoanAlertBaseline();
     // auto-sync loan statuses that mismatch borrow_records
-    (function(){var exp=expanded();var lsm={};exp.forEach(function(item){var lid=S(item.loan.LoanID);if(!lsm[lid])lsm[lid]=[];lsm[lid].push(item.status);});var toFix=[];for(var lid in lsm){var st=lsm[lid];var hasPend=st.indexOf('PENDING')>=0,hasAct=st.indexOf('ACTIVE')>=0,hasAccP=st.indexOf('ACC_PENDING')>=0;var allRet=st.every(function(s){return s==='RETURNED'||s==='ACC_PENDING';});var allCanc=st.every(function(s){return s==='CANCELLED';});var ns=allCanc?'CANCELLED':hasPend?'PENDING':hasAct?'ACTIVE':hasAccP?'ACC_PENDING':allRet?'RETURNED':'PENDING';var cur=loans.find(function(l){return l.LoanID===lid;});if(cur&&S(cur.Status)!==ns&&S(cur.Status)!=='CANCELLED'){toFix.push({lid:lid,ns:ns,cur:cur});}}if(toFix.length){Promise.all(toFix.map(function(x){return API.updateLoan(x.lid,{status:x.ns}).then(function(){x.cur.Status=x.ns;}).catch(function(){});})).then(function(){renderRec();renderAll();renderDaily();updateDash();});}})();
-    renderRec();renderAll();renderDaily();updateDash();
+    (function(){var exp=expanded();var lsm={};exp.forEach(function(item){var lid=S(item.loan.LoanID);if(!lsm[lid])lsm[lid]=[];lsm[lid].push(item.status);});var toFix=[];for(var lid in lsm){var st=lsm[lid];var hasPend=st.indexOf('PENDING')>=0,hasAct=st.indexOf('ACTIVE')>=0,hasAccP=st.indexOf('ACC_PENDING')>=0;var allRet=st.every(function(s){return s==='RETURNED'||s==='ACC_PENDING';});var allCanc=st.every(function(s){return s==='CANCELLED';});var ns=allCanc?'CANCELLED':hasPend?'PENDING':hasAct?'ACTIVE':hasAccP?'ACC_PENDING':allRet?'RETURNED':'PENDING';var cur=loans.find(function(l){return l.LoanID===lid;});if(cur&&S(cur.Status)!==ns&&S(cur.Status)!=='CANCELLED'){toFix.push({lid:lid,ns:ns,cur:cur});}}if(toFix.length){Promise.all(toFix.map(function(x){return API.updateLoan(x.lid,{status:x.ns}).then(function(){x.cur.Status=x.ns;}).catch(function(){});})).then(function(){_renderMainPages();});}})();
+    _renderMainPages();
     // ถ้าหน้าสถิติเปิดอยู่ตอน loadAll เสร็จ → load ทันที
     if(document.getElementById('pg-sum')&&document.getElementById('pg-sum').classList.contains('on')){
       loadSum().then(function(){startSumRealtime();setTimeout(function(){if(typeof _cmpInit==='function')_cmpInit();},100);});
@@ -6149,7 +6243,14 @@ function _getRecGroups(){
   });
   var groups=[],gmap={};
   items.forEach(function(item){var lid=S(item.loan.LoanID);if(!gmap[lid]){gmap[lid]=[];groups.push({lid:lid,loan:item.loan,items:gmap[lid]});}gmap[lid].push(item);});
-  groups.sort(function(a,b){var pa=Math.min.apply(null,a.items.map(function(i){return STATUS_ORDER[i.status]!==undefined?STATUS_ORDER[i.status]:5;}));var pb=Math.min.apply(null,b.items.map(function(i){return STATUS_ORDER[i.status]!==undefined?STATUS_ORDER[i.status]:5;}));if(pa!==pb)return pa-pb;return(b.loan.LoanDate||'').localeCompare(a.loan.LoanDate||'');});
+  // คำนวณ "ลำดับสถานะต่ำสุดของกลุ่ม" ครั้งเดียวต่อกลุ่มก่อน sort (แคชไว้ใน _sortKey)
+  // แทนที่จะให้ comparator คำนวณ Math.min ใหม่ทุกครั้งที่เทียบคู่ — ค่านี้ไม่เปลี่ยน
+  // ระหว่าง sort เลย คำนวณซ้ำเดิมเสียเปล่า (ยิ่งจำนวนกลุ่มเยอะ ยิ่งคำนวณซ้ำเยอะตาม
+  // อัตรา sort ~n·log n เทียบ แต่ต้องคำนวณจริงแค่ n ครั้งพอ)
+  groups.forEach(function(g){
+    g._sortKey=Math.min.apply(null,g.items.map(function(i){return STATUS_ORDER[i.status]!==undefined?STATUS_ORDER[i.status]:5;}));
+  });
+  groups.sort(function(a,b){if(a._sortKey!==b._sortKey)return a._sortKey-b._sortKey;return(b.loan.LoanDate||'').localeCompare(a.loan.LoanDate||'');});
   groups=_exactMatchFirst(groups,search,function(g){
     var f=[S(g.loan.LoanID),S(g.loan.BorrowerName),S(g.loan.DeptName),S(g.loan.PatientName)];
     g.items.forEach(function(i){f.push(S(i.eq.name));if(i.borrow)f.push(S(i.borrow.EquipmentNo));});
@@ -9877,13 +9978,25 @@ async function admSaveEditBorrow(){
     machine_returned:document.getElementById('admEditMachineRet').value==='true'
   };
   var ACC_ID_TO_COL={a1:'acc1_flow_meter_pto',a2:'acc2_flow_meter_70',a3:'acc3_self_inflating',a4:'acc4_full_face_mask',a5:'acc5_nasal_cannula',a7:'acc7_regulator_pto',a6:'acc6_other'};
+  // อุปกรณ์ประกอบที่เพิ่มใหม่จากหน้า Admin (id ไม่อยู่ใน ACC_ID_TO_COL) ไม่มีคอลัมน์
+  // ตายตัวรองรับ — ต้องอัปเดตกลับเข้า accessories (jsonb) แยกต่างหาก ไม่งั้นแก้เลข/
+  // รายละเอียดของอุปกรณ์พวกนี้ในฟอร์มนี้แล้วจะหายเงียบๆ เหมือนกันบั๊กที่แก้ไปแล้ว
+  var origBorrow=borrows?borrows.find(function(x){return S(x.RecordID)===recID;}):null;
+  var extraAccs=[];
   document.querySelectorAll('.admEditAccNo').forEach(function(inp){
     var col=ACC_ID_TO_COL[inp.dataset.accid];
 // ─────────────────────────────────────────────────────────── §ADMIN-BULK
 // แอดมิน: ค้นหาด่วน + Bulk actions
 // ───────────────────────────────────────────────────────────
     if(col)body[col]=inp.value.trim()||'✓';
+    else{
+      var orig=origBorrow&&origBorrow.Accessories?origBorrow.Accessories.find(function(a){return a.id===inp.dataset.accid;}):null;
+      extraAccs.push({id:inp.dataset.accid,name:orig?orig.name:'?',no:inp.value.trim()});
+    }
   });
+  if(origBorrow&&origBorrow.Accessories&&origBorrow.Accessories.some(function(a){return!ACC_ID_TO_COL[a.id];})){
+    body.accessories=extraAccs;
+  }
   try{
     await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(recID),body);
     bigToast('บันทึกการแก้ไขสำเร็จ\n'+recID,'success');closeM('mAdmEditBorrow');setTimeout(function(){loadAll().then(renderAdminBorrows);},1500);
@@ -9922,7 +10035,7 @@ function qeSearchLoan(){
   var res=document.getElementById('qeLoanResult');if(!q||!loans){res.innerHTML='';return;}
   var found=loans.filter(function(l){return(S(l.LoanID)+' '+S(l.BorrowerName)+' '+S(l.PatientName)).toLowerCase().includes(q);}).slice(0,5);
   if(!found.length){res.innerHTML='<div style="color:var(--mu);font-size:12px;padding:8px">ไม่พบ</div>';return;}
-  res.innerHTML='<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">'+found.map(function(l){return'<div style="background:var(--s2);border-radius:5px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center"><div><span style="font-family:var(--mo);font-size:11px;color:var(--ac)">'+S(l.LoanID)+'</span> <span style="font-size:12px">'+S(l.BorrowerName)+' / '+S(l.DeptName)+'</span><br><span style="font-size:11px;color:var(--mu)">ผู้ป่วย: '+S(l.PatientName)+' | '+S(l.LoanDate)+'</span></div><button class="btn badm sm" onclick="openEditLoan(\''+S(l.LoanID)+'\')">✏️</button></div>';}).join('')+'</div>';
+  res.innerHTML='<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">'+found.map(function(l){return'<div style="background:var(--s2);border-radius:5px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center"><div><span style="font-family:var(--mo);font-size:11px;color:var(--ac)">'+S(l.LoanID)+'</span> <span style="font-size:12px">'+ES(l.BorrowerName)+' / '+ES(l.DeptName)+'</span><br><span style="font-size:11px;color:var(--mu)">ผู้ป่วย: '+ES(l.PatientName)+' | '+S(l.LoanDate)+'</span></div><button class="btn badm sm" onclick="openEditLoan(\''+S(l.LoanID)+'\')">✏️</button></div>';}).join('')+'</div>';
 }
 function qeSearchBorrow(){
   var q=(document.getElementById('qeBorSearch').value||'').toLowerCase().trim();
@@ -10033,7 +10146,7 @@ async function bulkDeleteByStatus(){
   var area=document.getElementById('bulkPreviewArea');var content=document.getElementById('bulkPreviewContent');
   content.innerHTML='<div style="margin-bottom:8px;font-size:13px;color:var(--wn)">⚠️ จะลบ <strong>'+_bulkDelList.length+'</strong> รายการที่มีสถานะ <strong>'+stat+'</strong> ก่อนวันที่ <strong>'+before+'</strong></div>'
     +'<div class="dtw"><table class="dt" style="font-size:12px"><thead><tr><th>LoanID</th><th>วันที่ยืม</th><th>ผู้ยืม</th><th>แผนก</th><th>สถานะ</th></tr></thead><tbody>'
-    +filtered.slice(0,50).map(function(l){return'<tr><td style="font-family:var(--mo);font-size:10px">'+S(l.LoanID)+'</td><td>'+S(l.LoanDate)+'</td><td>'+S(l.BorrowerName)+'</td><td>'+S(l.DeptName)+'</td><td>'+badge(S(l.Status))+'</td></tr>';}).join('')
+    +filtered.slice(0,50).map(function(l){return'<tr><td style="font-family:var(--mo);font-size:10px">'+S(l.LoanID)+'</td><td>'+S(l.LoanDate)+'</td><td>'+ES(l.BorrowerName)+'</td><td>'+ES(l.DeptName)+'</td><td>'+badge(S(l.Status))+'</td></tr>';}).join('')
     +(filtered.length>50?'<tr><td colspan="5" style="text-align:center;color:var(--mu)">... และอีก '+(filtered.length-50)+' รายการ</td></tr>':'')
     +'</tbody></table></div>';
   area.style.display='block';
@@ -10927,16 +11040,22 @@ function rebuildRetRemarkSelect(){
   if(list.indexOf(cur)!==-1)sel.value=cur;
 }
 
+function _refreshDeptFilterOptions(){
+  // แก้บั๊ก performance: เดิมเรียก _deptOptionsHTML() ซ้ำ 3 รอบ (1 รอบต่อ dropdown)
+  // ทั้งที่ผลลัพธ์เหมือนกันทุกครั้ง แต่ละรอบต้องสแกนใบยืมทั้งหมดในระบบ — ยิ่งข้อมูล
+  // สะสมมากยิ่งช้า ตอนนี้คำนวณครั้งเดียวแล้วใช้ซ้ำ 3 dropdown
+  var html=_deptOptionsHTML();
+  ['allDept','recDept','dailyDept'].forEach(function(id){
+    var el=document.getElementById(id);if(!el)return;
+    var v=el.value;el.innerHTML='<option value="">ทั้งแผนก</option>'+html;
+    el.value=v;
+  });
+}
 function rebuildAllSelects(){
   rebuildEqNoDatalist();
   rebuildRetRemarkSelect();
   // dept dropdowns in filters
-  ['allDept','recDept','dailyDept'].forEach(function(id){
-    var el=document.getElementById(id);if(!el)return;
-    var v=el.value;el.innerHTML='<option value="">ทั้งแผนก</option>';
-    DEPTS.forEach(function(d){el.innerHTML+='<option value="'+d.n+'">'+d.n+'</option>';});
-    el.value=v;
-  });
+  _refreshDeptFilterOptions();
   // return-reason dropdown in all-data filter
   (function(){
     var el=document.getElementById('allRetRemark');if(!el)return;
