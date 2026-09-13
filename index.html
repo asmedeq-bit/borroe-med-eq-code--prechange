@@ -6443,6 +6443,16 @@ function qbUpdateUnits(){
   var wrap=document.getElementById('qbUnitsWrap');if(!wrap)return;
   var names=Object.keys(_qbSelected);
   if(!names.length){wrap.innerHTML='<div style="font-size:12px;color:var(--mu);text-align:center;padding:10px 0">เลือกเครื่องมือด้านบนก่อน</div>';return;}
+  // เก็บค่าที่กรอกไว้เดิมทุกแถวก่อน rebuild DOM ทั้งหมด — บั๊กที่เจอจริง: ฟังก์ชัน
+  // นี้สร้าง input ใหม่ทั้งหมดทุกครั้งที่เลือก/ยกเลิก/เปลี่ยนจำนวนเครื่องมือชนิดไหน
+  // ก็ตาม (แม้จะเป็นชนิดอื่นที่ไม่เกี่ยวกับแถวที่กรอกไว้แล้ว) ทำให้เลขเครื่อง/
+  // อุปกรณ์ประกอบที่เพิ่งกรอกของชนิดเดิมหายไปต้องพิมพ์ใหม่ทุกครั้ง — key ของแต่ละ
+  // แถว (name+'__'+i) คงที่ตราบใดที่ชนิด+ลำดับไม่เปลี่ยน จึงจำ-คืนค่าด้วย id ได้ตรง
+  var savedEqNo={},savedOth={},savedAccChk={},savedAccNo={};
+  wrap.querySelectorAll('input[id^="qbEqNo_"]').forEach(function(el){savedEqNo[el.id]=el.value;});
+  wrap.querySelectorAll('input[id^="qbOth_"]').forEach(function(el){savedOth[el.id]=el.value;});
+  wrap.querySelectorAll('input[id^="qbAcc_"]').forEach(function(el){savedAccChk[el.id]=el.checked;});
+  wrap.querySelectorAll('input[id^="qbAccNo_"]').forEach(function(el){savedAccNo[el.id]=el.value;});
   wrap.innerHTML='<div style="font-size:12px;color:var(--mu);margin-bottom:8px">📋 ระบุเลขเครื่อง + อุปกรณ์ประกอบของแต่ละเครื่อง</div>'
     +names.map(function(name){
       var qty=_qbSelected[name];
@@ -6473,6 +6483,29 @@ function qbUpdateUnits(){
       }
       return rows;
     }).join('');
+  // คืนค่าที่จำไว้กลับเข้า input ชุดใหม่ (id เดิม แต่เป็น element คนละตัว) — ทำหลัง
+  // จาก innerHTML ถูกแทนที่แล้วเท่านั้น เพราะ element ใหม่ต้องมีอยู่จริงในหน้าก่อน
+  names.forEach(function(name){
+    var qty=_qbSelected[name];
+    for(var i=0;i<qty;i++){
+      var key=(name+'__'+i).replace(/[^a-zA-Z0-9ก-๙]/g,'_');
+      var noEl=document.getElementById('qbEqNo_'+key);
+      if(noEl&&savedEqNo.hasOwnProperty('qbEqNo_'+key))noEl.value=savedEqNo['qbEqNo_'+key];
+      var othEl=document.getElementById('qbOth_'+key);
+      if(othEl&&savedOth.hasOwnProperty('qbOth_'+key))othEl.value=savedOth['qbOth_'+key];
+      ACCS.forEach(function(a){
+        var chkId='qbAcc_'+key+'_'+a.id;
+        var chk=document.getElementById(chkId);
+        if(chk&&savedAccChk.hasOwnProperty(chkId)){
+          chk.checked=savedAccChk[chkId];
+          if(chk.checked&&typeof qbToggleAccExtra==='function')qbToggleAccExtra(key,a.id);
+        }
+        var noId='qbAccNo_'+key+'_'+a.id;
+        var noElAcc=document.getElementById(noId);
+        if(noElAcc&&savedAccNo.hasOwnProperty(noId))noElAcc.value=savedAccNo[noId];
+      });
+    }
+  });
 }
 function _qbCheckEqNoLive(key,name){
   var noEl=document.getElementById('qbEqNo_'+key);
