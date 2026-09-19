@@ -9900,11 +9900,94 @@ function renderAdminBorrows(){
       +'<td><span class="badge '+(smap[S(b.Status)]||'bp2')+'">'+S(b.Status)+'</span></td>'
       +'<td><div style="display:flex;gap:3px;flex-wrap:wrap">'
         +'<button class="abt" style="border-color:#f59e0b;color:#f59e0b;font-size:11px" onclick="openEditBorrow(\''+S(b.RecordID)+'\')">✏️ แก้ไข</button>'
+        +(b.TransferHistory&&b.TransferHistory.length?'<button class="abt" style="border-color:var(--wn);color:var(--wn);font-size:11px" onclick="admOpenLastTransferEditor(\''+S(b.RecordID)+'\')">🔄 แก้โอนล่าสุด</button>':'')
         +'<button class="abt" style="border-color:var(--er);color:var(--er);font-size:11px" onclick="admDeleteBorrow(\''+S(b.RecordID)+'\')">🗑</button>'
       +'</div></td></tr>';
   }).join('');
   _admPager('admBorPager',_admBorPage,totalPages,'_admBorPage--;renderAdminBorrows()','_admBorPage++;renderAdminBorrows()','(function(p){_admBorPage=p;renderAdminBorrows();})');
 }
+
+// ══════════════════════════════════════════════════════════════
+// 🔄 แก้ไข/ลบ "รายการโอนล่าสุด" ของใบบันทึกยืม — ไม่แก้ประวัติโอนรายการก่อนหน้า
+// เลย (fromDept ของรายการอื่นไม่เปลี่ยน) เพราะ transferEquipment() เดิมมีแค่
+// "เพิ่มรายการใหม่" (push) ไม่มีทางแก้/ลบรายการที่บันทึกไปแล้วเลยแม้แต่ผ่าน
+// Console — ฟีเจอร์นี้ครอบคลุมแค่ "รายการล่าสุด" ตามที่ขอ ไม่ใช่แก้ได้ทุกรายการ
+// ในประวัติ (กันความซับซ้อน/ความเสี่ยงเกินจำเป็นสำหรับกรณีใช้งานจริงที่พบบ่อยสุด
+// คือ "โอนผิดแผนกล่าสุด อยากแก้/ยกเลิกอันนั้น")
+// ══════════════════════════════════════════════════════════════
+window.admOpenLastTransferEditor=function(recID){
+  var b=borrows?borrows.find(function(x){return S(x.RecordID)===recID;}):null;
+  if(!b||!b.TransferHistory||!b.TransferHistory.length){bigToast('ไม่พบประวัติการโอน','error');return;}
+  var last=b.TransferHistory[b.TransferHistory.length-1];
+  var deptOpts=activeDEPTS().map(function(d){return'<option value="'+esc(d.n)+'"'+(d.n===last.toDept?' selected':'')+'>'+esc(d.n)+'</option>';}).join('');
+  var overlay=document.createElement('div');
+  overlay.setAttribute('data-cool','1');
+  overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML='<div style="background:var(--s1);border:2px solid var(--wn);border-radius:12px;padding:24px 26px;max-width:380px;width:100%;max-height:90vh;overflow-y:auto">'
+    +'<div style="font-size:15px;font-weight:700;color:var(--wn);margin-bottom:4px">🔄 แก้ไข/ลบรายการโอนล่าสุด</div>'
+    +'<div style="font-size:12px;color:var(--mu);margin-bottom:14px">RecordID: '+esc(recID)+' — จากแผนก <strong>'+esc(last.fromDept||'-')+'</strong></div>'
+    +'<div class="fg" style="margin-bottom:10px"><label>โอนไปแผนก</label><select id="admTrEditToDept" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--bd);border-radius:6px;color:var(--tx)">'+deptOpts+'</select></div>'
+    +'<div class="fg" style="margin-bottom:10px"><label>วันที่โอน</label><input type="date" id="admTrEditDate" value="'+esc(last.date||'')+'" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--bd);border-radius:6px;color:var(--tx)"></div>'
+    +'<div class="fg" style="margin-bottom:10px"><label>ผู้โอน</label><input type="text" id="admTrEditWho" value="'+esc(last.transfererName||'')+'" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--bd);border-radius:6px;color:var(--tx)"></div>'
+    +'<div class="fg" style="margin-bottom:18px"><label>หมายเหตุ</label><input type="text" id="admTrEditNote" value="'+esc(last.note||'')+'" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--bd);border-radius:6px;color:var(--tx)"></div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:8px">'
+    +'<button style="flex:1;padding:11px;background:transparent;border:1px solid var(--bd);border-radius:7px;color:var(--tx);font-size:13px;font-weight:600;cursor:pointer" onclick="this.closest(\'[data-cool]\').remove()">ยกเลิก</button>'
+    +'<button style="flex:1;padding:11px;background:var(--wn);border:none;border-radius:7px;color:#000;font-size:13px;font-weight:700;cursor:pointer" onclick="admSaveLastTransferEdit(\''+recID+'\')">💾 บันทึกแก้ไข</button>'
+    +'</div>'
+    +'<button style="width:100%;padding:9px;background:transparent;border:1px solid var(--er);border-radius:7px;color:var(--er);font-size:12px;font-weight:600;cursor:pointer" onclick="admDeleteLastTransfer(\''+recID+'\')">🗑 ลบรายการโอนนี้ทิ้ง (กลับไปแผนกก่อนหน้า)</button>'
+    +'</div>';
+  overlay.addEventListener('click',function(e){if(e.target===overlay)overlay.remove();});
+  document.body.appendChild(overlay);
+};
+
+// ── หา dept code จากชื่อแผนก — ถ้าไม่เจอใน DEPTS (เช่นชื่อที่พิมพ์เอง "อื่นๆ")
+// ใช้รหัส 9999 (อื่นๆ) แทน กันเคสชื่อแผนกกำหนดเองไม่มีรหัสตรงกัน ──
+function _deptCodeByName(name){
+  var d=DEPTS.find(function(x){return x.n===name;});
+  return d?d.c:'9999';
+}
+
+window.admSaveLastTransferEdit=async function(recID){
+  var b=borrows?borrows.find(function(x){return S(x.RecordID)===recID;}):null;
+  if(!b||!b.TransferHistory||!b.TransferHistory.length)return;
+  var toDept=document.getElementById('admTrEditToDept').value;
+  var date=document.getElementById('admTrEditDate').value;
+  var who=document.getElementById('admTrEditWho').value.trim();
+  var note=document.getElementById('admTrEditNote').value.trim();
+  if(!toDept){bigToast('กรุณาเลือกแผนก','error');return;}
+  var th=b.TransferHistory.slice();
+  var last=Object.assign({},th[th.length-1],{toDept:toDept,date:date,transfererName:who,note:note});
+  th[th.length-1]=last;
+  try{
+    await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(recID),{transfer_history:th});
+    var loanRows=await SB.get('borrow_records','record_id=eq.'+encodeURIComponent(recID)+'&select=loan_id');
+    if(loanRows.length)await API.updateLoan(loanRows[0].loan_id,{deptCode:_deptCodeByName(toDept),deptName:toDept});
+    if(typeof _auditLog==='function')_auditLog('edit_last_transfer',recID,{new_to_dept:toDept});
+    var ov=document.querySelector('[data-cool]');if(ov)ov.remove();
+    bigToast('แก้ไขรายการโอนล่าสุดสำเร็จ','success');
+    await loadAll();renderAdminBorrows();
+  }catch(e){bigToast('บันทึกล้มเหลว: '+e.message,'error');}
+};
+
+window.admDeleteLastTransfer=async function(recID){
+  var b=borrows?borrows.find(function(x){return S(x.RecordID)===recID;}):null;
+  if(!b||!b.TransferHistory||!b.TransferHistory.length)return;
+  var th=b.TransferHistory.slice();
+  var removed=th.pop();
+  var revertDept=removed.fromDept||'';
+  if(!confirm('ลบรายการโอนล่าสุด (ไปแผนก "'+removed.toDept+'") ทิ้ง?\nแผนกปัจจุบันของใบยืมนี้จะกลับไปเป็น "'+(revertDept||'ไม่ทราบ')+'"\nทำแล้วย้อนกลับเองไม่ได้ (ต้องพิมพ์แก้ใหม่)'))return;
+  try{
+    await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(recID),{transfer_history:th});
+    if(revertDept){
+      var loanRows=await SB.get('borrow_records','record_id=eq.'+encodeURIComponent(recID)+'&select=loan_id');
+      if(loanRows.length)await API.updateLoan(loanRows[0].loan_id,{deptCode:_deptCodeByName(revertDept),deptName:revertDept});
+    }
+    if(typeof _auditLog==='function')_auditLog('delete_last_transfer',recID,{removed_to_dept:removed.toDept,reverted_to:revertDept});
+    var ov=document.querySelector('[data-cool]');if(ov)ov.remove();
+    bigToast('ลบรายการโอนล่าสุดแล้ว','success');
+    await loadAll();renderAdminBorrows();
+  }catch(e){bigToast('ลบล้มเหลว: '+e.message,'error');}
+};
 
 // ── Export รวม loan + borrow ตาม filter ────────────────────────
 function dlAdminBoth(fmt){
