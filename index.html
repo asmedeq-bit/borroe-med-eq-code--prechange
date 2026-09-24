@@ -14283,13 +14283,14 @@ window.showAdminTab=function(id,el){
 var _origCAP=window.checkAdminPin;
 window.checkAdminPin=function(){
   if(_origCAP)_origCAP.apply(this,arguments);
-  setTimeout(function(){var ac=document.getElementById('adminContent');if(ac&&ac.style.display!=='none'){_injectInvAdminTab();_injectErrorLogTab();}},400);
+  setTimeout(function(){var ac=document.getElementById('adminContent');if(ac&&ac.style.display!=='none'){_injectInvAdminTab();_injectErrorLogTab();_injectSbStatusAdminTab();}},400);
 };
 new MutationObserver(function(){
   var ac=document.getElementById('adminContent');
   if(ac&&ac.style.display!=='none'){
     if(!document.getElementById('atab-inv'))_injectInvAdminTab();
     if(!document.getElementById('atab-errlog'))_injectErrorLogTab();
+    if(!document.getElementById('atab-sbstatus'))_injectSbStatusAdminTab();
   }
 }).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
 
@@ -14306,6 +14307,205 @@ window.showAdminTab=function(id,el){
     if(el)el.classList.add('on');
     _errorLogReload();
   } else {if(_origSAT2)_origSAT2.apply(this,arguments);}
+};
+
+// ════════════════════════════════════════════ §SUPABASE-STATUS (เพิ่มใหม่)
+// แท็บ "📡 สถานะ Supabase" ใน Admin — เช็คสถานะการเชื่อมต่อ REST/DB/Auth แยกกัน,
+// เตือนเมื่อจำนวนแถวใกล้เพดานตามแผน Archive เดิม (ดู CHANGELOG.md), และแยกสาเหตุ
+// ความช้า (แอป/เน็ต/Supabase) ด้วยการวัดเวลาแยกชั้น — เก็บประวัติ 10 ครั้งล่าสุด
+// ไว้ใน localStorage ของเครื่องนี้เท่านั้น (ไม่สร้างตารางใหม่ใน Supabase)
+// เกณฑ์ 6,000/10,000 แถว ไม่ใช่ค่าคาดเดา — มาจาก "แผนการ Archive ข้อมูล" ที่บันทึก
+// ไว้ใน CHANGELOG.md (จุดเตือนภัย 6,000 แถว, เพดาน query fullHistory เดิม 10,000)
+var _SB_ROW_WARN=6000;
+var _SB_ROW_CRIT=10000;
+var _SB_STATUS_HISTORY_KEY='_sbStatusHistory';
+
+function _sbStatusHistoryLoad(){
+  try{return JSON.parse(localStorage.getItem(_SB_STATUS_HISTORY_KEY)||'[]');}catch(e){return [];}
+}
+function _sbStatusHistorySave(entry){
+  try{
+    var h=_sbStatusHistoryLoad();
+    h.unshift(entry);
+    if(h.length>10)h=h.slice(0,10);
+    localStorage.setItem(_SB_STATUS_HISTORY_KEY,JSON.stringify(h));
+  }catch(e){}
+}
+
+// นับแถวจริงด้วย HEAD + Prefer:count=exact (ไม่โหลดข้อมูลจริงทั้งหมด เร็ว/ประหยัด)
+async function _sbCountRows(table,selectCol){
+  var t0=performance.now();
+  var r=await fetch(SUPABASE_URL+'/rest/v1/'+table+'?select='+selectCol+'&limit=1',{
+    method:'HEAD',
+    headers:{'apikey':SUPABASE_ANON_KEY,'Authorization':'Bearer '+(Auth.accessToken()||SUPABASE_ANON_KEY),'Prefer':'count=exact'}
+  });
+  var ms=Math.round(performance.now()-t0);
+  var range=r.headers.get('content-range')||''; // รูปแบบ "0-0/1234"
+  var total=range.indexOf('/')>-1?parseInt(range.split('/')[1],10):null;
+  return {table:table,total:(total===null||isNaN(total))?null:total,ms:ms,ok:r.ok};
+}
+
+// ตรวจสถานะ 3 จุดแยกกัน: REST API เปล่า(เครือข่าย) / Database(query จริง) / Auth
+async function _sbCheckConnection(){
+  var res={ts:Date.now(),network:null,db:null,auth:null};
+  try{
+    var t0=performance.now();
+    var r=await fetch(SUPABASE_URL+'/rest/v1/',{headers:{'apikey':SUPABASE_ANON_KEY}});
+    res.network={ok:true,ms:Math.round(performance.now()-t0),status:r.status};
+  }catch(e){res.network={ok:false,ms:null,err:String(e&&e.message||e)};}
+  try{
+    var t1=performance.now();
+    await SB.get('loan_requests','select=loan_id&limit=1');
+    res.db={ok:true,ms:Math.round(performance.now()-t1)};
+  }catch(e){res.db={ok:false,ms:null,err:String(e&&e.message||e)};}
+  try{
+    var t2=performance.now();
+    // ต้องส่ง apikey เสมอ — Supabase API gateway (Kong) ปฏิเสธทุก request ไปยัง
+    // /auth/v1/* ที่ไม่มี apikey header ด้วย 401 "No API key found in request"
+    // ก่อนจะถึง GoTrue เองด้วยซ้ำ (เดิมลืมใส่ ทำให้ตรวจ Auth Service ขึ้นล้มเหลวเสมอ)
+    var r2=await fetch(SUPABASE_URL+'/auth/v1/health',{headers:{'apikey':SUPABASE_ANON_KEY}});
+    res.auth={ok:r2.ok,ms:Math.round(performance.now()-t2),status:r2.status};
+  }catch(e){res.auth={ok:false,ms:null,err:String(e&&e.message||e)};}
+  _sbStatusHistorySave(res);
+  return res;
+}
+
+// แยกสาเหตุความช้า: วัดเวลาเน็ตล้วนๆ vs query จริง vs การแสดงผลฝั่งแอป
+async function _sbDiagnoseSlowness(){
+  var o={ts:Date.now()};
+  var t0=performance.now();
+  try{await fetch(SUPABASE_URL+'/rest/v1/',{headers:{'apikey':SUPABASE_ANON_KEY}});}catch(e){}
+  o.network_only=Math.round(performance.now()-t0);
+  var t1=performance.now();
+  try{await SB.get('loan_requests','select=loan_id&limit=1');}catch(e){}
+  o.db_query=Math.round(performance.now()-t1);
+  var t2=performance.now();
+  try{
+    var tmp=document.createElement('div');
+    tmp.innerHTML=(loans||[]).slice(0,200).map(function(x){return '<div>'+ES(x.LoanID)+'</div>';}).join('');
+  }catch(e){}
+  o.client_render=Math.round(performance.now()-t2);
+  return o;
+}
+function _sbDiagnoseText(o){
+  if(o.network_only>500)return '🔴 <b>เน็ตช้า</b> — เวลาต่อ Supabase เปล่าๆ (ไม่แตะฐานข้อมูล) สูงถึง '+o.network_only+'ms ลองเช็คอินเทอร์เน็ต/WiFi ของเครื่องนี้ก่อน';
+  if(o.db_query-o.network_only>400)return '🟡 <b>Supabase/Database ช้า</b> — เน็ตปกติ ('+o.network_only+'ms) แต่ query จริงใช้ถึง '+o.db_query+'ms ต่างกันมาก มักเกิดจากโปรเจกต์เพิ่งตื่นจาก auto-pause (ลองกดตรวจซ้ำอีกครั้ง) หรือข้อมูลในตารางเยอะขึ้น';
+  if(o.client_render>300)return '🟡 <b>ตัวแอปช้า</b> — เน็ตและ query ปกติ แต่การแสดงผลบนหน้าจอ ('+o.client_render+'ms) ช้า มักเกิดจากข้อมูลที่โหลดมาแสดงพร้อมกันเยอะเกินไป';
+  return '🟢 ทุกส่วนอยู่ในเกณฑ์ปกติ (เน็ต '+o.network_only+'ms / DB '+o.db_query+'ms / แสดงผล '+o.client_render+'ms)';
+}
+
+function _sbUIRenderHistory(){
+  var el=document.getElementById('sbHistoryBody');if(!el)return;
+  var h=_sbStatusHistoryLoad();
+  if(!h.length){el.innerHTML='<span style="color:var(--mu)">ยังไม่มีประวัติการตรวจ</span>';return;}
+  function c(x){if(!x)return '⬜';return (x.ok?'🟢':'🔴')+(x.ms!=null?' '+x.ms+'ms':'');}
+  el.innerHTML='<div class="dtw"><table class="dt"><thead><tr><th>เวลา</th><th>REST</th><th>DB</th><th>Auth</th></tr></thead><tbody>'
+    +h.map(function(r){
+      return '<tr><td style="white-space:nowrap;font-family:var(--mo);font-size:10px">'+ES(new Date(r.ts).toLocaleString('th-TH'))+'</td>'
+        +'<td>'+c(r.network)+'</td><td>'+c(r.db)+'</td><td>'+c(r.auth)+'</td></tr>';
+    }).join('')
+    +'</tbody></table></div>';
+}
+async function _sbUIRunCheck(){
+  var el=document.getElementById('sbStatusResult');if(!el)return;
+  el.innerHTML='กำลังตรวจ...';
+  try{
+    var r=await _sbCheckConnection();
+    function badge(x){if(!x)return '⬜ ไม่ทราบ';return (x.ok?'🟢 OK':'🔴 ล้มเหลว')+(x.ms!=null?' ('+x.ms+'ms)':'')+(x.err?' — '+ES(x.err):'');}
+    el.innerHTML='<table class="dt"><tbody>'
+      +'<tr><td>REST API</td><td>'+badge(r.network)+'</td></tr>'
+      +'<tr><td>Database (query จริง)</td><td>'+badge(r.db)+'</td></tr>'
+      +'<tr><td>Auth Service</td><td>'+badge(r.auth)+'</td></tr>'
+      +'</tbody></table><div style="font-size:10px;color:var(--mu);margin-top:6px">ตรวจเมื่อ '+ES(new Date(r.ts).toLocaleString('th-TH'))+'</div>';
+    _sbUIRenderHistory();
+  }catch(e){el.innerHTML='<span style="color:var(--er)">ตรวจไม่สำเร็จ: '+ES(e.message)+'</span>';}
+}
+async function _sbUIRunRowCheck(){
+  var el=document.getElementById('sbRowResult');if(!el)return;
+  el.innerHTML='กำลังนับแถว...';
+  try{
+    var main=await _sbCountRows('loan_requests','loan_id');
+    var borrow=await _sbCountRows('borrow_records','record_id');
+    function pctBar(n,warn,crit){
+      if(n==null)return '';
+      var pct=Math.min(100,Math.round(n/crit*100));
+      var color=n>=crit?'var(--er)':(n>=warn?'var(--wn)':'var(--ok)');
+      return '<div style="background:#0002;border-radius:4px;height:8px;margin-top:3px"><div style="width:'+pct+'%;background:'+color+';height:8px;border-radius:4px"></div></div>';
+    }
+    var mainCrit=main.total!=null&&main.total>=_SB_ROW_CRIT;
+    var mainWarn=main.total!=null&&main.total>=_SB_ROW_WARN;
+    el.innerHTML='<div><b>loan_requests</b>: '+(main.total==null?'นับไม่สำเร็จ':main.total.toLocaleString()+' แถว')
+      +' (เกณฑ์เตือน '+_SB_ROW_WARN.toLocaleString()+' / เพดานวิกฤต '+_SB_ROW_CRIT.toLocaleString()+' — อ้างอิงแผน Archive ใน CHANGELOG.md)'
+      +pctBar(main.total,_SB_ROW_WARN,_SB_ROW_CRIT)
+      +(mainCrit?'<div style="color:var(--er);font-weight:bold;margin-top:4px">🔴 ถึงเพดานวิกฤตแล้ว — ควร archive ด่วนที่สุด</div>'
+        :mainWarn?'<div style="color:var(--wn);font-weight:bold;margin-top:4px">🟡 เกินเกณฑ์เตือนแล้ว — เริ่มวางแผน archive ได้แล้ว</div>'
+        :'<div style="color:var(--ok);margin-top:4px">🟢 ยังห่างเพดาน</div>')
+      +'</div>'
+      +'<div style="margin-top:10px"><b>borrow_records</b>: '+(borrow.total==null?'นับไม่สำเร็จ':borrow.total.toLocaleString()+' แถว')+' <span style="color:var(--mu)">(ยังไม่มีเกณฑ์เตือนเฉพาะ — ดูคู่กับ loan_requests)</span></div>'
+      +'<div style="font-size:10px;color:var(--mu);margin-top:8px">หมายเหตุ: นี่คือจำนวนแถว ไม่ใช่ขนาด MB — Supabase Free ไม่มี API ให้ดึงขนาด DB/bandwidth ที่เหลือจากฝั่ง client ได้ ต้องเช็คที่ Supabase Dashboard → Settings → Usage เป็นระยะด้วยตนเอง</div>';
+  }catch(e){el.innerHTML='<span style="color:var(--er)">เช็คไม่สำเร็จ: '+ES(e.message)+'</span>';}
+}
+async function _sbUIRunDiagnose(){
+  var el=document.getElementById('sbDiagResult');if(!el)return;
+  el.innerHTML='กำลังวิเคราะห์...';
+  try{
+    var o=await _sbDiagnoseSlowness();
+    el.innerHTML='<table class="dt"><tbody>'
+      +'<tr><td>เน็ตล้วนๆ (REST เปล่า)</td><td>'+o.network_only+'ms</td></tr>'
+      +'<tr><td>Query จริง (DB)</td><td>'+o.db_query+'ms</td></tr>'
+      +'<tr><td>แสดงผลฝั่งแอป (client render)</td><td>'+o.client_render+'ms</td></tr>'
+      +'</tbody></table>'
+      +'<div style="margin-top:6px">'+_sbDiagnoseText(o)+'</div>'
+      +'<div style="font-size:10px;color:var(--mu);margin-top:6px">แนะนำ: กดตรวจซ้ำ 2-3 ครั้ง เพราะครั้งแรกของวันมักช้ากว่าปกติจาก auto-pause wake-up ไม่ใช่ปัญหาถาวร</div>';
+  }catch(e){el.innerHTML='<span style="color:var(--er)">วิเคราะห์ไม่สำเร็จ: '+ES(e.message)+'</span>';}
+}
+
+function _buildSbStatusAdminHTML(){
+  return '<div class="card">'
+    +'<div class="ctitle">📡 สถานะการเชื่อมต่อ Supabase</div>'
+    +'<div style="font-size:11px;color:var(--mu);margin-bottom:10px">ตรวจสถานะ REST API / Database / Auth Service แยกกัน เพื่อดูว่าจุดไหนช้าหรือมีปัญหา</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">'
+    +'<button class="btn bg sm" onclick="_sbUIRunCheck()">🔍 ตรวจสถานะตอนนี้</button>'
+    +'<button class="btn bg sm" onclick="_sbUIRunDiagnose()">⚙️ วิเคราะห์ความช้า (แอป/เน็ต/Supabase)</button>'
+    +'<button class="btn bg sm" onclick="_sbUIRunRowCheck()">📊 เช็คขนาดข้อมูล vs เพดาน Archive</button>'
+    +'</div>'
+    +'<div id="sbStatusResult" style="font-size:12px;color:var(--mu);margin-bottom:14px">ยังไม่เคยตรวจในเซสชันนี้ — กดปุ่มด้านบน</div>'
+    +'<div id="sbDiagResult" style="font-size:12px;margin-bottom:14px"></div>'
+    +'<div id="sbRowResult" style="font-size:12px;margin-bottom:14px"></div>'
+    +'<div style="font-size:11px;color:var(--mu);margin-bottom:6px">ประวัติการตรวจสถานะ 10 ครั้งล่าสุด (เก็บในเครื่อง/เบราว์เซอร์นี้เท่านั้น)</div>'
+    +'<div id="sbHistoryBody"></div>'
+    +'</div>';
+}
+function _injectSbStatusAdminTab(){
+  var ac=document.getElementById('adminContent');if(!ac||document.getElementById('atab-sbstatus'))return;
+  var tabs=ac.querySelector('.admin-tabs');
+  if(tabs){
+    var btn=document.createElement('button');
+    btn.className='atab';btn.id='atab-sbstatus';
+    btn.setAttribute('onclick',"showAdminTab('sbstatus-mgr',this)");
+    btn.innerHTML='📡 สถานะ Supabase';
+    tabs.appendChild(btn);
+  }
+  var panel=document.createElement('div');
+  panel.className='admin-sub';panel.id='adm-sbstatus-mgr';
+  panel.style.display='none';
+  panel.innerHTML=_buildSbStatusAdminHTML();
+  ac.appendChild(panel);
+  _sbUIRenderHistory();
+}
+
+// เชื่อมแท็บ "📡 สถานะ Supabase" เข้ากับ showAdminTab — ต่อจากที่ errlog เชื่อมไว้แล้ว
+var _origSAT3=window.showAdminTab;
+window.showAdminTab=function(id,el){
+  if(id==='sbstatus-mgr'){
+    if(!document.getElementById('adm-sbstatus-mgr'))_injectSbStatusAdminTab();
+    document.querySelectorAll('.admin-sub').forEach(function(s){s.classList.remove('on');s.style.display='none';});
+    document.querySelectorAll('.atab').forEach(function(t){t.classList.remove('on');});
+    var p=document.getElementById('adm-sbstatus-mgr');
+    if(p){p.classList.add('on');p.style.display='';}
+    if(el)el.classList.add('on');
+    _sbUIRenderHistory();
+  } else {if(_origSAT3)_origSAT3.apply(this,arguments);}
 };
 
 // ─────────────────────────────────────────────────────────── §MANUAL-VIEWER
