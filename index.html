@@ -2523,6 +2523,15 @@ function toggleTheme(){
   </div>
 </div>
 
+<!-- MODAL: PEAK DETAIL (หน้าสถิติ — คลิกตัวเลข Peak เพื่อดูรายละเอียดเต็ม) -->
+<div class="mbk" id="mPeakDetail">
+  <div class="mdl" style="max-width:600px">
+    <div class="mhd"><div class="mttl">📊 รายละเอียด Peak</div><button class="mcls" onclick="closeM('mPeakDetail')">✕</button></div>
+    <div class="mbdy" id="peakDetailBody"></div>
+    <div class="mftr"><button class="btn bg" onclick="closeM('mPeakDetail')">ปิด</button></div>
+  </div>
+</div>
+
 <!-- MODAL: ADMIN EDIT LOAN -->
 <div class="mbk" id="mAdmEditLoan">
   <div class="mdl" style="max-width:650px">
@@ -7612,6 +7621,49 @@ async function renderSum(r){
 
   var BAR_COLORS2=['#00c8ff','#7c3aed','#10b981','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#34d399','#fbbf24','#f87171','#22d3ee','#a78bfa','#fb923c','#4ade80','#c084fc'];
 
+  // ── วันที่/ช่วงวันที่ถึงจุด Peak — ข้อมูลรายวัน (dayData) มีอยู่แล้ว เดิมแค่ไม่ได้
+  // เก็บไว้ว่าวันไหนถึง (Math.max ทิ้งข้อมูลวันที่ไปเฉยๆ) เพิ่มจุดนี้เพื่อให้ตอบได้ว่า
+  // Peak เกิดวันไหน/ช่วงไหน/กี่วัน โดยไม่ต้องเพิ่มตาราง Supabase ใหม่
+  function _pfmtDateThai(d){
+    var TH_MONTHS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    var p=d.split('-');var y=parseInt(p[0],10)+543;var mi=parseInt(p[1],10)-1;var day=parseInt(p[2],10);
+    return day+' '+(TH_MONTHS[mi]||'')+' '+y;
+  }
+  function _peakDateLabel(peakDatesArr){
+    if(!peakDatesArr||!peakDatesArr.length)return '';
+    var sorted=peakDatesArr.slice().sort();
+    // จัดกลุ่มวันที่ติดกันเป็นช่วงๆ (ต่างกันวันละ 1 วันพอดี = ติดกัน)
+    var groups=[[sorted[0]]];
+    for(var i=1;i<sorted.length;i++){
+      var diffDays=Math.round((new Date(sorted[i])-new Date(sorted[i-1]))/86400000);
+      if(diffDays===1)groups[groups.length-1].push(sorted[i]);
+      else groups.push([sorted[i]]);
+    }
+    var totalDays=sorted.length;
+    var lastG=groups[groups.length-1];
+    var rangeLabel=lastG.length===1?_pfmtDateThai(lastG[0]):_pfmtDateThai(lastG[0])+'–'+_pfmtDateThai(lastG[lastG.length-1]);
+    if(groups.length===1)return rangeLabel+(totalDays>1?' ('+totalDays+' วัน)':'');
+    return rangeLabel+' (ล่าสุด — รวมถึงระดับนี้ '+totalDays+' วัน)';
+  }
+  // เมื่อ Peak เกิดหลายช่วงแยกกัน (ไม่ติดกัน) — แจกแจงประวัติครบทุกช่วงไว้ใน
+  // tooltip (title attribute) เพราะ peakLabel ด้านบนโชว์ได้แค่ช่วงล่าสุด + ยอดรวม
+  // เท่านั้น ไม่งั้นข้อมูลช่วงก่อนหน้าจะไม่มีที่แสดงเลย
+  function _peakFullHistory(peakDatesArr){
+    if(!peakDatesArr||peakDatesArr.length<2)return '';
+    var sorted=peakDatesArr.slice().sort();
+    var groups=[[sorted[0]]];
+    for(var i=1;i<sorted.length;i++){
+      var diffDays=Math.round((new Date(sorted[i])-new Date(sorted[i-1]))/86400000);
+      if(diffDays===1)groups[groups.length-1].push(sorted[i]);
+      else groups.push([sorted[i]]);
+    }
+    if(groups.length<2)return '';
+    return groups.map(function(g,gi){
+      var lbl=g.length===1?_pfmtDateThai(g[0]):_pfmtDateThai(g[0])+'–'+_pfmtDateThai(g[g.length-1]);
+      return 'ช่วงที่ '+(gi+1)+': '+lbl+' ('+g.length+' วัน)';
+    }).join('\n');
+  }
+
   var snapStats=snapEqNames.map(function(n,i){
     var dayData=snapMap[n]||{};
     var dates=Object.keys(dayData).sort();
@@ -7619,6 +7671,9 @@ async function renderSum(r){
     var sumActiveS=dates.reduce(function(s,d){return s+(dayData[d]||0);},0);
     var avgS=totalDaysS>0?(sumActiveS/totalDaysS).toFixed(2):'0.00';
     var peakS=totalDaysS>0?Math.max.apply(null,dates.map(function(d){return dayData[d]||0;})):0;
+    var peakDatesS=totalDaysS>0?dates.filter(function(d){return (dayData[d]||0)===peakS;}):[];
+    var peakLabelS=_peakDateLabel(peakDatesS);
+    var peakHistoryS=_peakFullHistory(peakDatesS);
     var todayVal=dayData[localDateStr(now)]||0;
     var last7=dates.slice(-7);
     var ma7S=last7.length>0?(last7.reduce(function(s,d){return s+(dayData[d]||0);},0)/last7.length).toFixed(2):'0.00';
@@ -7627,10 +7682,108 @@ async function renderSum(r){
     var utilPct=inv.active>0?parseFloat((parseFloat(avgS)/inv.active*100).toFixed(1)):null;
     var availableNow=Math.max(0,(inv.active||0)-todayVal);
     var col=BAR_COLORS2[i%BAR_COLORS2.length];
-    return{name:n,avg:avgS,peak:peakS,todayVal:todayVal,ma7:ma7S,
+    return{name:n,avg:avgS,peak:peakS,peakDates:peakDatesS,peakLabel:peakLabelS,peakHistory:peakHistoryS,todayVal:todayVal,ma7:ma7S,
            sumActive:sumActiveS,totalDays:totalDaysS,trend:trendS,
            utilPct:utilPct,inv:inv,availableNow:availableNow,col:col};
   });
+
+  // ── รายละเอียด Peak แบบคลิกดู (modal) — เก็บข้อมูลดิบต่อเครื่องมือไว้ใน
+  // window._peakDetailMap เพื่อให้ _peakDetailOpen() เรียกใช้สร้าง modal ได้
+  // โดยไม่ต้องคำนวณซ้ำ (ไม่กระทบค่า Peak/AVG เดิมที่มีอยู่แล้ว)
+  window._peakDetailMap=window._peakDetailMap||{};
+  snapStats.forEach(function(e){
+    window._peakDetailMap[e.name]={
+      name:e.name,inv:e.inv,avg:e.avg,peak:e.peak,totalDays:e.totalDays,
+      peakDates:e.peakDates,dayData:snapMap[e.name]||{},col:e.col
+    };
+  });
+  // จัดกลุ่มวันที่ Peak แบบละเอียด (คืนค่า array ของ object ไม่ใช่ string)
+  // ใช้ทั้งใน modal (ตารางทุกช่วง) — ใช้ logic กลุ่มวันติดกันแบบเดียวกับ
+  // _peakDateLabel/_peakFullHistory ด้านบน
+  function _peakGroupsDetailed(peakDatesArr){
+    if(!peakDatesArr||!peakDatesArr.length)return[];
+    var sorted=peakDatesArr.slice().sort();
+    var groups=[[sorted[0]]];
+    for(var i=1;i<sorted.length;i++){
+      var diffDays=Math.round((new Date(sorted[i])-new Date(sorted[i-1]))/86400000);
+      if(diffDays===1)groups[groups.length-1].push(sorted[i]);
+      else groups.push([sorted[i]]);
+    }
+    return groups.map(function(g){
+      return{start:g[0],end:g[g.length-1],days:g.length,
+             label:g.length===1?_pfmtDateThai(g[0]):_pfmtDateThai(g[0])+'–'+_pfmtDateThai(g[g.length-1])};
+    });
+  }
+  // sparkline ครอบคลุมทุกวันที่มีข้อมูล (ไม่จำกัด 14 วันล่าสุดแบบในตาราง) พร้อม
+  // จุดไฮไลท์วันที่ถึง Peak (สีแดง) ให้เห็นตำแหน่ง peak บนกราฟทั้งหมด
+  function _peakSparkFull(dayData,peakDatesArr,col){
+    var dates=Object.keys(dayData||{}).sort();
+    if(!dates.length)return'<div style="color:var(--mu);font-size:12px;text-align:center;padding:10px">ไม่มีข้อมูล</div>';
+    var vals=dates.map(function(d){return dayData[d]||0;});
+    var maxV=Math.max.apply(null,vals.concat([1]));
+    var peakSet={};(peakDatesArr||[]).forEach(function(d){peakSet[d]=true;});
+    var w=520,h=90,pad=8;
+    var pts=vals.map(function(v,i){
+      var x=pad+Math.round(i*((w-pad*2)/(vals.length-1||1)));
+      var y=Math.round(h-pad-(v/maxV)*(h-pad*2));
+      return x+','+y;
+    });
+    var fillPts=pts.concat([(w-pad)+','+(h-pad),pad+','+(h-pad)]).join(' ');
+    var linePts=pts.join(' ');
+    var dots=vals.map(function(v,i){
+      if(!peakSet[dates[i]])return'';
+      var x=pad+Math.round(i*((w-pad*2)/(vals.length-1||1)));
+      var y=Math.round(h-pad-(v/maxV)*(h-pad*2));
+      return'<circle cx="'+x+'" cy="'+y+'" r="3.5" fill="var(--er)" stroke="var(--s1)" stroke-width="1"/>';
+    }).join('');
+    return'<svg width="100%" height="'+h+'" viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" style="display:block">'
+      +'<polyline points="'+fillPts+'" fill="'+(col||'var(--ac)')+'" opacity="0.10"/>'
+      +'<polyline points="'+linePts+'" fill="none" stroke="'+(col||'var(--ac)')+'" stroke-width="1.6" stroke-linejoin="round"/>'
+      +dots
+      +'</svg>'
+      +'<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--mu);margin-top:2px">'
+        +'<span>'+_pfmtDateThai(dates[0])+'</span><span>'+_pfmtDateThai(dates[dates.length-1])+'</span>'
+      +'</div>';
+  }
+  // เปิด modal รายละเอียด Peak ของเครื่องมือชื่อ name — แสดงค่า Active ปัจจุบัน,
+  // กราฟเต็มช่วง, และตารางทุกช่วงที่เคยถึง Peak (วันที่/จำนวนวัน/% ของ Active ปัจจุบัน)
+  window._peakDetailOpen=function(name){
+    var d=window._peakDetailMap&&window._peakDetailMap[name];
+    var body=document.getElementById('peakDetailBody');
+    if(!body)return;
+    if(!d){body.innerHTML='<div style="color:var(--mu);padding:10px">ไม่พบข้อมูล</div>';openM('mPeakDetail');return;}
+    var activeNow=(d.inv&&d.inv.active!=null)?d.inv.active:null;
+    var groups=_peakGroupsDetailed(d.peakDates).sort(function(a,b){return b.start<a.start?1:-1;}).reverse();
+    var groupsRows=groups.map(function(g,gi){
+      var pct=activeNow>0?Math.round(d.peak/activeNow*1000)/10:null;
+      return'<tr style="border-bottom:1px solid var(--bd)">'
+        +'<td style="padding:6px 8px;text-align:center;color:var(--mu);font-size:12px">'+(gi+1)+'</td>'
+        +'<td style="padding:6px 8px;font-size:13px">'+esc(g.label)+'</td>'
+        +'<td style="padding:6px 8px;text-align:center;font-family:var(--mo);font-size:13px">'+g.days+' วัน</td>'
+        +'<td style="padding:6px 8px;text-align:center;font-family:var(--mo);font-size:13px;color:'+(pct!==null&&pct>=80?'var(--er)':'var(--tx)')+'">'+(pct!==null?pct+'%':'—')+'</td>'
+      +'</tr>';
+    }).join('');
+    body.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
+        +'<div><div style="font-size:15px;font-weight:700">'+esc(d.name)+'</div>'
+          +'<div style="font-size:11px;color:var(--mu)">ข้อมูลสะสม '+d.totalDays+' วัน</div></div>'
+        +'<div style="display:flex;gap:14px">'
+          +'<div style="text-align:center"><div style="font-size:10px;color:var(--mu)">Peak สูงสุด</div><div style="font-size:20px;font-weight:700;color:var(--er);font-family:var(--mo)">'+d.peak+'</div></div>'
+          +'<div style="text-align:center"><div style="font-size:10px;color:var(--mu)">Active ปัจจุบัน</div><div style="font-size:20px;font-weight:700;color:var(--ok);font-family:var(--mo)">'+(activeNow!=null?activeNow:'—')+'</div></div>'
+          +'<div style="text-align:center"><div style="font-size:10px;color:var(--mu)">AVG</div><div style="font-size:20px;font-weight:700;color:var(--ac);font-family:var(--mo)">'+d.avg+'</div></div>'
+        +'</div>'
+      +'</div>'
+      +'<div style="background:var(--s2);border-radius:8px;padding:10px 12px;margin-bottom:12px">'+_peakSparkFull(d.dayData,d.peakDates,d.col)+'</div>'
+      +(activeNow===0||activeNow==null?'<div style="font-size:11px;color:var(--wn);margin-bottom:8px">⚠️ ไม่มีข้อมูล Active ปัจจุบัน — % คำนวณไม่ได้</div>':'')
+      +'<div style="font-size:12px;font-weight:600;color:var(--mu);margin-bottom:6px">ประวัติช่วงที่ถึง Peak ('+groups.length+' ช่วง)</div>'
+      +'<div style="overflow-x:auto"><table class="dt" style="width:100%;min-width:380px">'
+        +'<thead><tr>'
+          +'<th style="padding:6px 8px;text-align:center;font-size:11px">#</th>'
+          +'<th style="padding:6px 8px;text-align:left;font-size:11px">ช่วงวันที่</th>'
+          +'<th style="padding:6px 8px;text-align:center;font-size:11px">จำนวนวัน</th>'
+          +'<th style="padding:6px 8px;text-align:center;font-size:11px">% ของ Active ปัจจุบัน</th>'
+        +'</tr></thead><tbody>'+groupsRows+'</tbody></table></div>';
+    openM('mPeakDetail');
+  };
 
   var _bkkTime=new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(now);
   var _bkkDate=new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',year:'numeric',month:'short',day:'numeric'}).format(now);
@@ -7753,7 +7906,12 @@ async function renderSum(r){
           +'</div>'
           +'<div class="snp-card" data-filter="peak" style="background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:border .15s" title="คลิกเพื่อ highlight เครื่องที่ Peak สูงสุด">'
             +'<div style="font-size:11px;color:var(--mu);margin-bottom:6px">สูงสุด (Peak)</div>'
-            +'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--er);line-height:1">'+(_peakEq?_peakEq.peak:'—')+'</div>'
+            +(_peakEq
+              ?('<div style="cursor:pointer;border-radius:6px;padding:4px 2px;margin:-4px -2px" title="คลิกเพื่อดูรายละเอียด Peak ทั้งหมด" onclick="event.stopPropagation();_peakDetailOpen(\''+esc(_peakEq.name).replace(/'/g,"\\'")+'\')">'
+                +'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--er);line-height:1;text-decoration:underline;text-decoration-style:dotted">'+_peakEq.peak+'</div>'
+                +(_peakEq.peakLabel?'<div style="font-size:10px;color:var(--er);margin-top:2px"'+(_peakEq.peakHistory?' title="'+esc(_peakEq.peakHistory)+'"':'')+'>'+esc(_peakEq.peakLabel)+(_peakEq.peakHistory?' ℹ️':'')+'</div>':'')
+              +'</div>')
+              :'<div style="font-size:28px;font-weight:700;font-family:var(--mo);color:var(--er);line-height:1">—</div>')
             +'<div style="font-size:11px;color:var(--mu);margin-top:4px">'+(_peakEq?_peakEq.name:'')+'<span style="font-size:9px;opacity:.7"> ▼ กรอง</span></div>'
           +'</div>'
         +'</div>';
@@ -7784,7 +7942,10 @@ async function renderSum(r){
               +e.name
             +'</td>'
             +'<td style="text-align:center;font-family:var(--mo);color:var(--ac);font-weight:700;font-size:14px">'+parseFloat(e.avg).toFixed(1)+'</td>'
-            +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:var(--tx)">'+e.peak+pUtxt+'</td>'
+            +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:var(--tx);cursor:pointer;padding:8px 6px" title="คลิกเพื่อดูรายละเอียด Peak ทั้งหมด" onclick="event.stopPropagation();_peakDetailOpen(\''+esc(e.name).replace(/'/g,"\\'")+'\')">'
+              +'<span style="text-decoration:underline;text-decoration-style:dotted">'+e.peak+'</span>'+pUtxt
+              +(e.peakLabel?'<div style="font-size:9px;color:var(--mu);font-weight:400;white-space:nowrap'+(e.peakHistory?';border-bottom:1px dotted var(--mu)':'')+'"'+(e.peakHistory?' title="'+esc(e.peakHistory)+'"':'')+'>'+esc(e.peakLabel)+(e.peakHistory?' ℹ️':'')+'</div>':'')
+            +'</td>'
             +'<td style="text-align:center;font-family:var(--mo);font-size:13px;color:#15803d">'+( e.inv.active!=null?e.inv.active:'—')+'</td>'
             +'<td style="padding:8px 10px;min-width:160px">'+uCell+'</td>'
             +'<td style="text-align:center;font-size:12px">'+trendTxt+'</td>'
