@@ -960,10 +960,11 @@ function toggleTheme(){
         🔵 Global Filter
         <span style="font-size:10px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px">กำหนดขอบเขตข้อมูลที่โหลด — แต่ละ section กรองแสดงผลอิสระของตัวเอง</span>
       </div>
-      <div style="display:flex;gap:4px">
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
         <button class="btn bg sm" onclick="dlPage('sum','csv')">CSV</button>
         <button class="btn bg sm" onclick="dlPage('sum','xlsx')">XLS</button>
         <button class="btn bg sm" onclick="dlPage('sum','pdf')">PDF</button>
+        <button class="btn bp sm" onclick="_sumFullPagePrint()" title="รวมทุกส่วนในหน้าสถิติ (กราฟ/ตาราง/สรุปรายวัน/AVG-Peak-Utilization/แจ้งเตือน/HFNC/ข้อมูลยืมทั้งหมด) เป็นรายงานเดียว พร้อมพิมพ์/บันทึก PDF">🖨️ พิมพ์รายงานทั้งหมด</button>
       </div>
     </div>
     <div class="fbar">
@@ -7967,13 +7968,38 @@ async function renderSum(r){
         // ── unique IDs ──
         window._utilSectionParams={tblId:_tblId,barId:_barId,peak:_peakEq?_peakEq.name:''};
 
+        // ── ข้อมูลสำหรับ "รายงานสรุป" (พิมพ์/PDF + Excel) — รวมทุกฟีเจอร์ที่มีในหน้า
+        // สถิติ ณ ตอนนี้ (AVG/Peak+ช่วงวันที่ Peak/Active/Utilization/แนวโน้ม) ตาม
+        // ช่วงวันที่ที่กรองอยู่ในหน้าจอปัจจุบัน — ไม่คำนวณใหม่ ใช้ snapStats เดิม
+        // ที่ render ตารางอยู่แล้ว (ไม่กระทบค่าที่แสดงบนหน้าจอเลย)
+        window._sumFullReportData={
+          rangeLabel:(_avgDateS||computeRangeS)+' ถึง '+(_avgDateE||computeRangeE),
+          dateFirst:_snapDateFirst,dateLast:_snapDateLast,dayCount:_snapDayCount,
+          totalEq:snapStats.length,totalOnLoanToday:totalOnLoanToday,totalAvg:totalAvg,
+          avgUtil:avgUtil,maxDays:maxDays,
+          rows:snapStats.map(function(e){
+            var pUpct=(e.inv.active>0)?Math.round(e.peak/e.inv.active*1000)/10:null;
+            var trendTh=e.trend==='up'?'▲ เพิ่มขึ้น':e.trend==='down'?'▼ ลดลง':'─ คงที่';
+            return{
+              name:e.name,total:e.inv.total!=null?e.inv.total:'',active:e.inv.active!=null?e.inv.active:'',
+              inactive:e.inv.inactive||0,forDept:e.inv.forDept||0,today:e.todayVal,available:e.availableNow,
+              avg:e.avg,ma7:e.ma7,peak:e.peak,peakLabel:e.peakLabel||'',peakHistory:e.peakHistory||'',
+              peakPct:pUpct,utilPct:e.utilPct,totalDays:e.totalDays,trend:trendTh
+            };
+          })
+        };
+
         return '<div style="background:var(--s1);border:1px solid var(--bd);border-radius:10px;overflow:hidden">'
           +'<div style="padding:12px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">'
             +'<div>'
               +'<div style="font-size:13px;font-weight:700;color:var(--tx)">📊 สรุปภาพรวมการใช้งานเครื่องมือแพทย์</div>'
               +'<div style="font-size:11px;color:var(--mu);margin-top:2px">'+_snapDateFirst+' ถึง '+_snapDateLast+' · ข้อมูล '+_snapDayCount+' วัน — '+_totalRecords+' records</div>'
             +'</div>'
-            +'<div style="font-size:11px;color:var(--mu)">💡 คลิกการ์ดกรอง · คลิกหัวตารางเรียง · คลิกแถวไฮไลท์</div>'
+            +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+              +'<button class="btn bg sm" onclick="event.stopPropagation();_sumFullReportPrint()" title="สร้างรายงานสรุปทุกฟีเจอร์ในหน้านี้ พร้อมพิมพ์/บันทึกเป็น PDF">🖨️ รายงานสรุป</button>'
+              +'<button class="btn bg sm" onclick="event.stopPropagation();_sumFullReportExcel()" title="ส่งออกข้อมูลตารางทั้งหมดเป็นไฟล์ Excel">📊 Excel</button>'
+              +'<span style="font-size:11px;color:var(--mu)">💡 คลิกการ์ดกรอง · คลิกหัวตารางเรียง · คลิกแถวไฮไลท์</span>'
+            +'</div>'
           +'</div>'
           +'<div style="padding:14px 16px">'
             +_cards
@@ -11476,6 +11502,128 @@ function dlXLS(filenameBase,rows){
   var blob=new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filenameBase+'.xlsx';a.click();
 }
+// ── รายงานสรุปหน้า "สถิติ" แบบครบทุกฟีเจอร์ (AVG/Peak+ช่วงวันที่ Peak/Active/
+// Utilization/แนวโน้ม) — ใช้ข้อมูลเดียวกับที่ render ตารางบนหน้าจออยู่แล้ว
+// (window._sumFullReportData ถูกเซ็ตไว้ตอน renderSum() ทุกครั้ง) ตามช่วงวันที่ที่
+// กรองอยู่ ณ ตอนนั้น — ไม่คำนวณใหม่ ไม่กระทบค่า AVG/Peak เดิมเลย
+function _sumReportHeaderRows(d){
+  return[
+    ['ช่วงข้อมูลที่กรองอยู่',d.rangeLabel],
+    ['ช่วงวันที่มีข้อมูลจริง',d.dateFirst+' ถึง '+d.dateLast+' ('+d.dayCount+' วัน)'],
+    ['จำนวนเครื่องมือ',d.totalEq+' รายการ'],
+    ['On Loan วันนี้',d.totalOnLoanToday+' เครื่อง'],
+    ['AVG รวม',d.totalAvg+' เครื่อง/วัน'],
+    ['Utilization เฉลี่ย',d.avgUtil+(d.avgUtil!=='—'?'%':'')],
+    ['ข้อมูลสะสมสูงสุด',d.maxDays+' วัน']
+  ];
+}
+function _sumReportTableRows(d){
+  var rows=[['เครื่องมือ','รวมทั้งหมด','Active','ซ่อม/ไม่พร้อมใช้','ประจำแผนก','On Loan วันนี้','ว่างพร้อมยืม','AVG/วัน','MA7 (7วันล่าสุด)','Peak สูงสุด','Peak เกิดช่วง/วันที่','Peak % (เทียบ Active ปัจจุบัน)','Utilization %','ข้อมูลสะสม (วัน)','แนวโน้ม']];
+  d.rows.forEach(function(r){
+    rows.push([r.name,r.total,r.active,r.inactive,r.forDept,r.today,r.available,r.avg,r.ma7,r.peak,
+      r.peakLabel+(r.peakHistory?' | ประวัติ: '+r.peakHistory.replace(/\n/g,' / '):''),
+      r.peakPct!=null?r.peakPct+'%':'—',r.utilPct!=null?r.utilPct+'%':'—',r.totalDays,r.trend]);
+  });
+  return rows;
+}
+window._sumFullReportPrint=function(){
+  var d=window._sumFullReportData;
+  if(!d||!d.rows||!d.rows.length){if(window.toast)toast('ยังไม่มีข้อมูลสำหรับออกรายงาน','warning');return;}
+  var headRows=_sumReportHeaderRows(d);
+  var tblRows=_sumReportTableRows(d);
+  var css='body{font-family:Arial,Tahoma,sans-serif;font-size:10px;color:#111;margin:0;padding:16px}'
+    +'h2{font-size:15px;margin:0 0 4px}.info{font-size:9px;color:#666;margin-bottom:12px}'
+    +'.cards{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}'
+    +'.c{border:1px solid #ccc;border-radius:6px;padding:8px 12px;min-width:110px}'
+    +'.c .l{font-size:8px;color:#666;margin-bottom:3px}.c .v{font-size:14px;font-weight:700;color:#1a1a2e}'
+    +'table{border-collapse:collapse;width:100%;font-size:8.5px}th{background:#1a1a2e;color:#fff;padding:5px 6px;text-align:left;white-space:nowrap}'
+    +'td{border:1px solid #ccc;padding:3px 6px;vertical-align:top}tr:nth-child(even) td{background:#f5f5f5}'
+    +'@media print{button{display:none}}';
+  var cardsHtml=headRows.map(function(r){return'<div class="c"><div class="l">'+r[0]+'</div><div class="v">'+r[1]+'</div></div>';}).join('');
+  var tHead='<tr>'+tblRows[0].map(function(h){return'<th>'+String(h).replace(/</g,'&lt;')+'</th>';}).join('')+'</tr>';
+  var tBody=tblRows.slice(1).map(function(r){return'<tr>'+r.map(function(c){return'<td>'+String(c==null?'':c).replace(/</g,'&lt;')+'</td>';}).join('')+'</tr>';}).join('');
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'+css+'</style><title>รายงานสรุปสถิติการใช้งานเครื่องมือแพทย์</title></head><body>'
+    +'<h2>📊 รายงานสรุปสถิติการใช้งานเครื่องมือแพทย์</h2>'
+    +'<div class="info">ออกรายงาน: '+new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})+'</div>'
+    +'<div class="cards">'+cardsHtml+'</div>'
+    +'<table><thead>'+tHead+'</thead><tbody>'+tBody+'</tbody></table>'
+    +'<br><button onclick="window.print()" style="padding:8px 18px;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">🖨️ พิมพ์/บันทึก PDF</button>'
+    +'</body></html>';
+  var win=window.open('','_blank','width=1200,height=800,scrollbars=yes');
+  if(!win){alert('กรุณาอนุญาต popup');return;}
+  win.document.write(html);win.document.close();
+};
+window._sumFullReportExcel=function(){
+  var d=window._sumFullReportData;
+  if(!d||!d.rows||!d.rows.length){if(window.toast)toast('ยังไม่มีข้อมูลสำหรับออกรายงาน','warning');return;}
+  var rows=[['รายงานสรุปสถิติการใช้งานเครื่องมือแพทย์'],
+    ['ช่วงข้อมูลที่กรองอยู่',d.rangeLabel],
+    ['ออกรายงาน',new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})],
+    []
+  ].concat(_sumReportTableRows(d));
+  dlXLS('รายงานสรุปสถิติเครื่องมือแพทย์_'+new Date().toISOString().split('T')[0],rows);
+};
+// ── พิมพ์ "ทุกฟีเจอร์" ในหน้าสถิติเป็นรายงานเดียว (ตามที่ผู้ใช้เลือก: รวมทุกส่วน,
+// ปุ่มเดียวสั่งพิมพ์ครั้งเดียว) — วิธีการ: clone DOM ของ #sumCont ทั้งก้อน (ซึ่งมี
+// ทุก section ที่ renderSum() วาดไว้อยู่แล้ว: กราฟ ACTIVE ตามชนิดเครื่องมือ, สรุป
+// ยืม-คืนรายวัน, ตาราง AVG/Peak/Utilization/แนวโน้ม, รายการยืมเกิน 1 เดือน, วันที่
+// ใช้งานรายเครื่อง, Circuit เกิน 30 วัน, ยืมแยกตามแผนก×เครื่องมือ, เครื่องใช้ต่อเนื่อง
+// นาน, HFNC Set, HFNC เปรียบเทียบ, ข้อมูลยืมทั้งหมด) แทนการคำนวณข้อมูลแต่ละ
+// section ใหม่ทีละส่วน — ปลอดภัยกว่า (ข้อมูลตรงกับที่เห็นบนจอ 100% เสมอ) และไม่
+// ต้องแตะ logic คำนวณเดิมของ section ไหนเลย ใช้ pattern เดียวกับ manDL('pdf')
+// ที่มีอยู่แล้วในไฟล์ (clone innerHTML + ใส่ CSS variable ชุด light theme)
+function _sfpCanvasToImg(liveRoot,cloneRoot){
+  var live=liveRoot.querySelectorAll('canvas');
+  var clones=cloneRoot.querySelectorAll('canvas');
+  live.forEach(function(cv,i){
+    var cc=clones[i];
+    if(!cc||!cc.parentNode)return;
+    try{
+      var img=document.createElement('img');
+      img.src=cv.toDataURL('image/png');
+      img.style.maxWidth='100%';
+      if(cv.width)img.width=cv.width;
+      if(cv.height)img.height=cv.height;
+      cc.parentNode.replaceChild(img,cc);
+    }catch(e){/* canvas ว่าง/ยังไม่วาด — เว้นไว้ ไม่ทำให้รายงานพัง */}
+  });
+}
+window._sumFullPagePrint=function(){
+  var src=document.getElementById('sumCont');
+  if(!src||!src.innerHTML){if(window.toast)toast('ยังไม่มีข้อมูล — กด "🔍 ดู" เพื่อโหลดข้อมูลก่อน','warning');return;}
+  var clone=src.cloneNode(true);
+  _sfpCanvasToImg(src,clone);
+  // เปิดส่วนที่พับ/ซ่อนอยู่ (display:none) ให้แสดงครบในรายงาน เพราะผู้ใช้ต้องการ
+  // "ทุกฟีเจอร์" ไม่ใช่แค่ส่วนที่กางอยู่ตอนกดพิมพ์
+  clone.querySelectorAll('[style*="display:none"],[style*="display: none"]').forEach(function(el){el.style.display='';});
+  // ซ่อนปุ่ม/ตัวควบคุม interactive ที่ไม่มีประโยชน์ตอนพิมพ์ (กรอง/เรียง/ตัวกรองย่อย)
+  clone.querySelectorAll('button,select,input').forEach(function(el){el.style.display='none';});
+  var rangeLabel=(window._sumFullReportData&&window._sumFullReportData.rangeLabel)||'';
+  var css=':root{--bg:#fff;--s1:#f9fafb;--s2:#f3f4f6;--bd:#e5e7eb;--tx:#111827;--mu:#6b7280;'
+    +'--ac:#0284c7;--ac2:#7c3aed;--ok:#15803d;--wn:#b45309;--er:#dc2626;'
+    +'--fn:"Sarabun",sans-serif;--mo:"IBM Plex Mono",monospace}'
+    +'*{box-sizing:border-box}body{font-family:var(--fn);background:#fff;color:#111827;padding:20px 24px;font-size:12px}'
+    +'.card{border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:16px;background:#fff;page-break-inside:avoid}'
+    +'table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:4px 7px;font-size:10.5px}'
+    +'th{background:#f3f4f6}'
+    +'.ctitle{font-weight:700}'
+    +'@media print{.no-print{display:none}@page{size:A4 landscape;margin:12mm}}';
+  var head='<div style="margin-bottom:16px">'
+    +'<h2 style="margin:0 0 4px;font-size:18px">📊 รายงานสรุปหน้าสถิติ — ครบทุกฟีเจอร์</h2>'
+    +(rangeLabel?'<div style="font-size:11px;color:#666">ช่วงข้อมูลที่กรองอยู่: '+rangeLabel+'</div>':'')
+    +'<div style="font-size:11px;color:#666">ออกรายงาน: '+new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})+'</div>'
+    +'</div>';
+  var html='<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">'
+    +'<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">'
+    +'<style>'+css+'</style><title>รายงานสรุปหน้าสถิติ</title></head><body>'
+    +head+clone.innerHTML
+    +'<div class="no-print" style="position:fixed;bottom:16px;right:16px">'
+    +'<button onclick="window.print()" style="padding:10px 20px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif">🖨️ พิมพ์ / บันทึก PDF</button>'
+    +'</div></body></html>';
+  var win=window.open('','_blank','width=1300,height=850,scrollbars=yes');
+  if(!win){alert('กรุณาอนุญาต popup');return;}
+  win.document.write(html);win.document.close();
+};
 function showPg(page,el){
   document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
   document.querySelectorAll('.nt').forEach(function(t){t.classList.remove('on');});
