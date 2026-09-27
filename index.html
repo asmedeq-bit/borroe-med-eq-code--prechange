@@ -13334,6 +13334,7 @@ window.invUnitStatus=async function(id,value){
 // ══════════════════════════════════════════════════════════════
 function _openMaintLogModal(unitId,eventType,newStatus){
   var u=window._EQ_UNITS_BY_ID[unitId];if(!u)return;
+  window._mlRefreshRepair=false; // reset ทุกครั้งที่เปิดฟอร์ม — เซ็ตเป็น true เฉพาะตอนเปิดจากหน้า "งานส่งซ่อม" เท่านั้น (ดู repairMarkReturned)
   document.getElementById('mlUnitId').value=unitId;
   document.getElementById('mlEventType').value=eventType;
   document.getElementById('mlNewStatus').value=newStatus;
@@ -13394,6 +13395,7 @@ window.saveMaintLog=async function(){
     });
     _invRecalcFromUnits();
     var b=document.getElementById('invAdminBody');if(b)b.innerHTML=_buildInvRows();
+    if(window._mlRefreshRepair){window._mlRefreshRepair=false;if(typeof renderRepair==='function')renderRepair();}
     closeM('mMaintLog');
     if(window.toast)window.toast('บันทึกสำเร็จ','success');
   }catch(e){
@@ -13682,6 +13684,7 @@ function _repairRenderTablePage(){
     var sentId=j.sent?j.sent.id:'null',retId=j.returned?j.returned.id:'null';
     var unitId=j.sent?j.sent.unit_id:(j.returned?j.returned.unit_id:'null');
     var actHtml='<td style="padding:7px 8px;text-align:center;white-space:nowrap">'
+      +(isPending?('<button class="abt" style="border-color:var(--ok);color:var(--ok)" onclick="repairMarkReturned('+unitId+')" title="บันทึกรับคืนจากซ่อม">✅ รับคืน</button> '):'')
       +'<button class="abt" onclick="repairViewDetail('+sentId+','+retId+')" title="ดูรายละเอียด">📄</button> '
       +'<button class="abt" onclick="repairEditJob('+sentId+','+retId+')" title="แก้ไข">✏️</button> '
       +'<button class="abt" onclick="invShowMaintHist('+unitId+')" title="ประวัติซ่อมทั้งหมดของเครื่องนี้">📋</button> '
@@ -13760,6 +13763,21 @@ window.repairViewDetail=function(sentId,retId){
       ])+'</table>':'<div style="color:var(--mu);font-size:12px">ยังไม่รับคืน</div>')+'</div></div>';
   _repairOpenSimpleModal('mRepairDetail','📄 รายละเอียดงานซ่อม',html,'<button class="btn bg" onclick="closeM(\'mRepairDetail\')">ปิด</button>');
 };
+
+// ปุ่ม "✅ รับคืน" บนหน้างานส่งซ่อม — ทางเข้าใหม่สู่ฟอร์มบันทึกรับคืนเดิม (_openMaintLogModal)
+// เช็คสถานะเครื่องปัจจุบันก่อนเสมอ (ต้องยังเป็น "ซ่อม" อยู่จริง) กันกรณีเครื่องถูกเปลี่ยน
+// สถานะไปแล้วจากที่อื่น (เช่นหน้าจัดการครุภัณฑ์) ก่อนจะมากดปุ่มนี้ — ถ้าไม่ตรงจะไม่เปิดฟอร์มให้
+window.repairMarkReturned=function(unitId){
+  var u=window._EQ_UNITS_BY_ID[unitId];
+  if(!u){if(window.toast)window.toast('ไม่พบข้อมูลเครื่องนี้ในทะเบียนครุภัณฑ์','error');return;}
+  if(u.status!=='ซ่อม'){
+    if(window.toast)window.toast('เครื่องนี้ไม่ได้อยู่ในสถานะ "ซ่อม" แล้ว (สถานะปัจจุบัน: '+u.status+') — อาจถูกเปลี่ยนจากที่อื่นไปแล้ว กรุณาตรวจสอบที่หน้าจัดการครุภัณฑ์','warning');
+    return;
+  }
+  _openMaintLogModal(unitId,'returned','คงเหลือ');
+  window._mlRefreshRepair=true; // ให้ saveMaintLog() รีเฟรชตารางหน้างานส่งซ่อมด้วยหลังบันทึกสำเร็จ
+};
+
 window.repairEditJob=function(sentId,retId){
   var job=_repairFindJob(sentId,retId);
   if(!job){if(window.toast)window.toast('ไม่พบข้อมูล','error');return;}
