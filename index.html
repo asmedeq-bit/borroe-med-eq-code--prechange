@@ -2829,7 +2829,7 @@ function toggleTheme(){
     <button class="btn bg sm" onclick="pfPrintPage(1)" title="พิมพ์เฉพาะหน้าแรก (รายชื่อผู้ป่วย) — เผื่อเครื่องพิมพ์ไม่รองรับพิมพ์สองด้านอัตโนมัติ ต้องพลิกกระดาษเอง">🖨 พิมพ์เฉพาะหน้า 1</button>
     <button class="btn bg sm" onclick="pfPrintPage(2)" title="พิมพ์เฉพาะหน้าหลัง (สรุป) — พิมพ์หลังพลิกกระดาษใส่ถาดแล้ว">🖨 พิมพ์เฉพาะหน้า 2</button>
   </div>
-  <div class="pf-note">ดึงเฉพาะรายการที่ <b>ยังยืมอยู่ (ACTIVE)</b> ชนิด Ventilator / Ventilator transfer / HFNC / HFNC transfer / BiPAP — เติมช่อง <b>แผนก · เลขเครื่อง · ชื่อผู้ป่วย</b> อัตโนมัติ. ทุกช่องแก้ไขได้ก่อนพิมพ์. ช่องตรวจสอบ/พ่นยา/circuit/ข้อขัดข้อง เว้นว่างไว้กรอกด้วยมือ.<br><b>📄 วิธีพิมพ์:</b> กด Ctrl+P → <b>ปิด "Headers and footers"</b> (เอาเวลา/ชื่อออก ได้เนื้อที่เพิ่ม) → เลือก <b>Layout: Landscape</b> → พิมพ์สองด้านเลือก <b>"Flip on long edge"</b> (หน้า-หลังหัวตรงกัน).</div>
+  <div class="pf-note">ดึงเฉพาะรายการที่ <b>ยังยืมอยู่ (ACTIVE)</b> ชนิด Ventilator / HFNC / Ventilator transfer / HFNC transfer / BiPAP — เติมช่อง <b>แผนก · เลขเครื่อง · ชื่อผู้ป่วย</b> อัตโนมัติ. ทุกช่องแก้ไขได้ก่อนพิมพ์. ช่องตรวจสอบ/พ่นยา/circuit/ข้อขัดข้อง เว้นว่างไว้กรอกด้วยมือ.<br><b>📄 วิธีพิมพ์:</b> กด Ctrl+P → <b>ปิด "Headers and footers"</b> (เอาเวลา/ชื่อออก ได้เนื้อที่เพิ่ม) → เลือก <b>Layout: Landscape</b> → พิมพ์สองด้านเลือก <b>"Flip on long edge"</b> (หน้า-หลังหัวตรงกัน).</div>
 
   <div class="pf-wrap">
     <!-- ═══ หน้าหน้า ═══ -->
@@ -2840,7 +2840,7 @@ function toggleTheme(){
       <table class="pf">
         <colgroup id="pfFrontCols">
           <col style="width:3%"><col style="width:6%">
-          <col style="width:6%"><col style="width:6%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:4.5%">
+          <col style="width:6%"><col style="width:4.5%"><col style="width:6%"><col style="width:4.5%"><col style="width:4.5%">
           <col style="width:12%">
           <col style="width:4.5%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:4.5%"><col style="width:4.5%">
           <col style="width:3.5%"><col style="width:3.5%"><col style="width:3.5%">
@@ -2858,7 +2858,7 @@ function toggleTheme(){
             <th rowspan="2" class="pf-actcol">จัดการ</th>
           </tr>
           <tr>
-            <th contenteditable>Ventilator</th><th contenteditable>Ventilator transfer</th><th contenteditable>HFNC</th><th contenteditable>HFNC transfer</th><th contenteditable>BiPAP</th>
+            <th contenteditable>Ventilator</th><th contenteditable>HFNC</th><th contenteditable>Ventilator transfer</th><th contenteditable>HFNC transfer</th><th contenteditable>BiPAP</th>
             <th contenteditable>Patient</th><th contenteditable>ระบบไฟ</th><th contenteditable>แผ่นกรอง</th><th contenteditable>autodrain</th><th contenteditable>ค่าalarm</th><th contenteditable>ที่ตั้งvent</th>
             <th contenteditable>MDI</th><th contenteditable>NB</th><th contenteditable>spacer</th><th contenteditable>WET</th><th contenteditable>DRY</th>
           </tr>
@@ -2878,8 +2878,8 @@ function toggleTheme(){
         <colgroup id="pfBackTopCols">
           <col style="width:3.9%">
           <col style="width:4.6%"><col style="width:4.4%">
-          <col style="width:4.3%"><col style="width:4.0%">
           <col style="width:5.0%"><col style="width:4.8%">
+          <col style="width:4.3%"><col style="width:4.0%">
           <col style="width:4.0%"><col style="width:3.8%">
           <col style="width:3.5%"><col style="width:3.3%">
           <col style="width:7.6%"><col style="width:7.4%">
@@ -2892,7 +2892,7 @@ function toggleTheme(){
         <thead contenteditable>
           <tr>
             <th rowspan="2" contenteditable>แผนก</th>
-            <th colspan="2" contenteditable>Ventilator</th><th colspan="2" contenteditable>Ventilator transfer</th><th colspan="2" contenteditable>HFNC</th><th colspan="2" contenteditable>HFNC transfer</th><th colspan="2" contenteditable>BiPAP</th><th colspan="2" contenteditable>Infusion pump</th>
+            <th colspan="2" contenteditable>Ventilator</th><th colspan="2" contenteditable>HFNC</th><th colspan="2" contenteditable>Ventilator transfer</th><th colspan="2" contenteditable>HFNC transfer</th><th colspan="2" contenteditable>BiPAP</th><th colspan="2" contenteditable>Infusion pump</th>
             <th colspan="2" contenteditable>Syringe pump</th><th colspan="2" contenteditable>Suction/thoracic</th><th colspan="2" contenteditable>Feed pump</th><th colspan="2" contenteditable>Flow meter</th>
             <th rowspan="2" contenteditable>หมายเหตุ</th>
           </tr>
@@ -2915,9 +2915,9 @@ function toggleTheme(){
         <!-- ── บล็อก 1: สรุปยอดการใช้ Ventilator (5 คอลัมน์) ── -->
         <div id="pfSumBlock1" style="width:43%;position:relative">
         <table class="pf" style="width:100%;table-layout:fixed">
-          <colgroup id="pfSumCols1"><col style="width:11%"><col style="width:17%"><col style="width:15%"><col style="width:15%"><col style="width:13%"><col style="width:15%"><col style="width:14%"></colgroup>
+          <colgroup id="pfSumCols1"><col style="width:11%"><col style="width:17%"><col style="width:15%"><col style="width:13%"><col style="width:15%"><col style="width:15%"><col style="width:14%"></colgroup>
           <tr><td class="pf-sec" colspan="7" contenteditable>สรุปยอดการใช้งานเครื่องมือประจำวัน</td></tr>
-          <tr><td colspan="2" contenteditable>รายการ</td><td contenteditable>Ventilator</td><td contenteditable>Ventilator transfer</td><td contenteditable>HFNC</td><td contenteditable>HFNC transfer</td><td contenteditable>BiPAP</td></tr>
+          <tr><td colspan="2" contenteditable>รายการ</td><td contenteditable>Ventilator</td><td contenteditable>HFNC</td><td contenteditable>Ventilator transfer</td><td contenteditable>HFNC transfer</td><td contenteditable>BiPAP</td></tr>
           <tr><td colspan="2" class="tl" contenteditable>จำนวนยอดใช้งานยกมา</td><td contenteditable id="pfSumVol0"></td><td contenteditable id="pfSumVol1"></td><td contenteditable id="pfSumVol2"></td><td contenteditable id="pfSumVol3"></td><td contenteditable id="pfSumVol4"></td></tr>
           <tr><td colspan="2" class="tl" contenteditable>จำนวนยอดยืม</td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
           <tr><td colspan="2" class="tl" contenteditable>จำนวนยอดคืน</td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
@@ -2930,9 +2930,9 @@ function toggleTheme(){
           <tr><td class="tl" contenteditable>อญ</td><td contenteditable>42</td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable>ศช</td><td contenteditable>14</td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable>ศญ</td><td contenteditable>73</td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
-          <tr><td class="tl" contenteditable>80/1</td><td contenteditable>51</td><td contenteditable></td><td contenteditable>28</td><td contenteditable></td><td contenteditable></td></tr>
-          <tr><td class="tl" contenteditable>ER</td><td contenteditable>31,39,41,45</td><td contenteditable>3T,7T,15T</td><td contenteditable>2,23</td><td contenteditable></td><td contenteditable></td></tr>
-          <tr><td class="tl" contenteditable>SICU</td><td contenteditable>59</td><td contenteditable>1T,4T</td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+          <tr><td class="tl" contenteditable>80/1</td><td contenteditable>51</td><td contenteditable>28</td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
+          <tr><td class="tl" contenteditable>ER</td><td contenteditable>31,39,41,45</td><td contenteditable>2,23</td><td contenteditable>3T,7T,15T</td><td contenteditable></td><td contenteditable></td></tr>
+          <tr><td class="tl" contenteditable>SICU</td><td contenteditable>59</td><td contenteditable></td><td contenteditable>1T,4T</td><td contenteditable></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable>ห้องไตเทียม</td><td contenteditable>68</td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td><td contenteditable></td></tr>
@@ -2954,8 +2954,8 @@ function toggleTheme(){
           <tr><td contenteditable>รายการ</td><td contenteditable>Total</td><td contenteditable>ซ่อม</td><td contenteditable>รอจำหน่าย</td><td contenteditable>For Dept Use</td><td contenteditable>ยืม</td><td contenteditable>คงเหลือ</td><td contenteditable>ไม่มีจ่าย</td></tr>
           <tbody id="pfHmeBody">
           <tr><td class="tl" contenteditable>Ventilator</td><td contenteditable id="pfTot0"></td><td contenteditable id="pfRep0"></td><td contenteditable id="pfDis0"></td><td contenteditable id="pfDept0"></td><td contenteditable id="pfLoan0"></td><td contenteditable id="pfRem0"></td><td contenteditable></td></tr>
-          <tr><td class="tl" contenteditable>Ventilator transfer</td><td contenteditable id="pfTot1"></td><td contenteditable id="pfRep1"></td><td contenteditable id="pfDis1"></td><td contenteditable id="pfDept1"></td><td contenteditable id="pfLoan1"></td><td contenteditable id="pfRem1"></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable>HFNC</td><td contenteditable id="pfTot2"></td><td contenteditable id="pfRep2"></td><td contenteditable id="pfDis2"></td><td contenteditable id="pfDept2"></td><td contenteditable id="pfLoan2"></td><td contenteditable id="pfRem2"></td><td contenteditable></td></tr>
+          <tr><td class="tl" contenteditable>Ventilator transfer</td><td contenteditable id="pfTot1"></td><td contenteditable id="pfRep1"></td><td contenteditable id="pfDis1"></td><td contenteditable id="pfDept1"></td><td contenteditable id="pfLoan1"></td><td contenteditable id="pfRem1"></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable>HFNC transfer</td><td contenteditable id="pfTot9"></td><td contenteditable id="pfRep9"></td><td contenteditable id="pfDis9"></td><td contenteditable id="pfDept9"></td><td contenteditable id="pfLoan9"></td><td contenteditable id="pfRem9"></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable>BiPAP</td><td contenteditable id="pfTot3"></td><td contenteditable id="pfRep3"></td><td contenteditable id="pfDis3"></td><td contenteditable id="pfDept3"></td><td contenteditable id="pfLoan3"></td><td contenteditable id="pfRem3"></td><td contenteditable></td></tr>
           <tr><td class="tl" contenteditable>Infusion pump</td><td contenteditable id="pfTot4"></td><td contenteditable id="pfRep4"></td><td contenteditable id="pfDis4"></td><td contenteditable id="pfDept4"></td><td contenteditable id="pfLoan4"></td><td contenteditable id="pfRem4"></td><td contenteditable></td></tr>
@@ -11811,7 +11811,9 @@ function toast(msg,type){if(!type)type='success';var w=document.getElementById('
 function bigToast(msg,type){if(!type)type='success';var overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px';var colors={success:['var(--ok)','rgba(16,185,129,.15)'],error:['var(--er)','rgba(239,68,68,.15)'],warning:['var(--wn)','rgba(245,158,11,.15)']};var ic={success:'✅',error:'❌',warning:'⚠️'};var c=colors[type]||colors.success;var box=document.createElement('div');box.style.cssText='background:var(--s1);border:2px solid '+c[0]+';border-radius:12px;padding:32px 40px;text-align:center;max-width:420px;width:100%';var lines=msg.split('\n');box.innerHTML='<div style="font-size:48px;margin-bottom:14px">'+ic[type]+'</div><div style="font-size:22px;font-weight:700;color:'+c[0]+';margin-bottom:8px;line-height:1.4">'+lines[0]+'</div>'+(lines.slice(1).map(function(l){return'<div style="font-size:15px;color:var(--mu);margin-top:6px">'+l+'</div>';}).join(''))+'<button style="margin-top:22px;background:'+c[0]+';color:'+(type==='warning'?'#000':'#fff')+';border:none;border-radius:7px;padding:10px 28px;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--fn)" onclick="this.closest(\'[data-bt]\').remove()">ตกลง</button>';overlay.setAttribute('data-bt','1');overlay.appendChild(box);overlay.addEventListener('click',function(e){if(e.target===overlay)overlay.remove();});document.body.appendChild(overlay);if(type==='success')setTimeout(function(){if(overlay.parentNode)overlay.remove();},3000);}
 // ═══════════════ หน้าพิมพ์ฟอร์ม (Print Form) ═══════════════
 // ดึงเฉพาะ ACTIVE ชนิด Ventilator/BiPAP/Ventilator transfer/HFNC → เติม แผนก/เลขเครื่อง/ชื่อผู้ป่วย อัตโนมัติ
-var PF_EQCOL={'Ventilator':0,'Ventilator transfer':1,'HFNC':2,'HFNC transfer':3,'BiPAP':4,'BIPAP':4};
+// 28 ก.ย. 2569: ลำดับคอลัมน์ใหม่ Ventilator, HFNC, Ventilator transfer, HFNC transfer, BiPAP
+// (เดิม HFNC อยู่คอลัมน์ 2) — ข้อมูลที่จำไว้ตามตำแหน่งแบบเก่าแปลงให้อัตโนมัติ ดู _pfSwapEqCols
+var PF_EQCOL={'Ventilator':0,'HFNC':1,'Ventilator transfer':2,'HFNC transfer':3,'BiPAP':4,'BIPAP':4};
 var PF_FRONT_ROWS=45;   // จำนวนแถวหน้าหน้า (ค่าเริ่มต้น พอดี A4)
 var PF_BACK_ROWS=20;    // จำนวนแถวหน้าหลัง (เว้นว่าง)
 var _pfInited=false;
@@ -11969,7 +11971,7 @@ function _pfNormName(s){
   return s.toLowerCase();
 }
 function _pfFrontRow(i,d){
-  // d.eq = array 4 ช่อง [Ventilator, BIPAP, Ventilator transfer, HFNC] (แต่ละช่องเป็น string เลขเครื่อง)
+  // d.eq = array 5 ช่อง ตามลำดับคอลัมน์ PF_EQCOL [Ventilator, HFNC, Ventilator transfer, HFNC transfer, BiPAP] (แต่ละช่องเป็น string เลขเครื่อง)
   var eq=d?d.eq:['','','','',''];
   var h='<tr><td class="rn">'+(i+1)+'</td>';
   h+='<td contenteditable>'+(d?esc(d.dept):'')+'</td>';
@@ -12041,7 +12043,7 @@ function _pfCollect(){
     }
   });
   var list=order.map(function(k){return groups[k];});
-  // เรียงตามแผนกก่อน แล้วภายในแผนกเดียวกัน: เรียงตามชนิดเครื่องก่อน (Ventilator→Vtransfer→HFNC→HFNCtransfer→BiPAP) แล้วเลขเครื่องน้อย→มาก
+  // เรียงตามแผนกก่อน แล้วภายในแผนกเดียวกัน: เรียงตามชนิดเครื่องก่อน (ตามลำดับคอลัมน์ PF_EQCOL: Ventilator→HFNC→Vtransfer→HFNCtransfer→BiPAP) แล้วเลขเครื่องน้อย→มาก
   list.sort(function(a,b){
     var ra=pfDeptRank(a.dept),rb=pfDeptRank(b.dept);
     if(ra!==rb)return ra-rb;
@@ -12175,7 +12177,7 @@ function _pfColKey(cfg){return 'pf_col_widths_'+cfg.colgroupId;}
 // ไม่แตะฟังก์ชันจำ/โหลดค่าดั้งเดิมทั้ง 4 หมวดเลยสักจุด (ยังอ่าน-เขียน localStorage
 // คีย์เดิมเป๊ะเหมือนก่อนหน้า) แค่ "เสริม" ให้อ่าน/เขียนขึ้น Supabase คู่ขนานไปด้วย
 function _pfLayoutSnapshot(){
-  var snap={cols:{},block:null,hl:null,dept:null,standby:_pfDeptSnapshot('pfSbBody'),hmeUsage:_pfDeptSnapshot('pfProbBody',1)};
+  var snap={eqOrder:3,cols:{},block:null,hl:null,dept:null,standby:_pfDeptSnapshot('pfSbBody'),hmeUsage:_pfDeptSnapshot('pfProbBody',1)};
   PF_COLCFG.forEach(function(cfg){
     try{var s=localStorage.getItem('pf_col_widths_'+cfg.colgroupId);if(s)snap.cols[cfg.colgroupId]=JSON.parse(s);}catch(e){}
   });
@@ -12272,6 +12274,7 @@ function _pfSyncLayoutDown(){
     if(typeof _lsGet!=='function')return;
     var snap=_lsGet('pf_layout_prefs',null);
     if(!snap)return;
+    if(snap.eqOrder!==3)_pfConvertLayoutSnapEqOrder(snap);   // บันทึกจากเวอร์ชันก่อนย้ายคอลัมน์ HFNC (ครบทุกตาราง)
     if(snap.cols)Object.keys(snap.cols).forEach(function(id){
       try{localStorage.setItem('pf_col_widths_'+id,JSON.stringify(snap.cols[id]));}catch(e){}
     });
@@ -12414,9 +12417,9 @@ function _pfBindBlockResize(){
 // ═══════════ รีเซ็ตเฉพาะเค้าโครง (ความกว้างคอลัมน์+บล็อก) — ไม่แตะข้อมูล/ไฮไลต์/แถวที่เพิ่ม ═══════════
 // ต่างจาก pfResetForm() ที่ล้างข้อมูลทั้งหมด — ปุ่มนี้แก้เฉพาะกรณีลากคอลัมน์/บล็อกผิดจนเพี้ยน
 var PF_DEFAULT_COLW={
-  pfFrontCols:[3,6,6,6,4.5,4.5,4.5,12,4.5,4.5,4.5,4.5,4.5,4.5,3.5,3.5,3.5,3.5,3.5,9],
-  pfBackTopCols:[3.9,4.6,4.4,4.3,4.0,5.0,4.8,4.0,3.8,3.5,3.3,7.6,7.4,6.0,5.8,2.9,2.9,3.0,3.0,3.0,3.1,9.7],
-  pfSumCols1:[11,17,15,15,13,15,14],
+  pfFrontCols:[3,6,6,4.5,6,4.5,4.5,12,4.5,4.5,4.5,4.5,4.5,4.5,3.5,3.5,3.5,3.5,3.5,9],
+  pfBackTopCols:[3.9,4.6,4.4,5.0,4.8,4.3,4.0,4.0,3.8,3.5,3.3,7.6,7.4,6.0,5.8,2.9,2.9,3.0,3.0,3.0,3.1,9.7],
+  pfSumCols1:[11,17,15,13,15,15,14],
   pfSumCols2:[52,24,12,12],
   pfSumCols3:[30,20,50]
 };
@@ -12548,7 +12551,7 @@ function pfReload(){
 // นับจำนวนเครื่องแต่ละชนิด (ACTIVE) ใส่แถว Volume ของบล็อกสรุปยอด Ventilator
 function pfFillSummary(data){
   // data = รายการที่รวมแถวแล้ว, แต่ละ item มี eq[5] (แต่ละช่องเป็น string เลขเครื่อง คั่น comma)
-  var count=[0,0,0,0,0];   // Ventilator, V.transfer, HFNC, HFNC transfer, BiPAP
+  var count=[0,0,0,0,0];   // Ventilator, HFNC, V.transfer, HFNC transfer, BiPAP (ตาม PF_EQCOL)
   data.forEach(function(g){
     for(var c=0;c<5;c++){
       if(g.eq[c]&&String(g.eq[c]).trim()){
@@ -12654,6 +12657,7 @@ function _pfSyncTitle(){
 function initPrintForm(){
   if(!_pfInited){
     _pfInited=true;
+    _pfMigrateEqOrderWidthsLocal();   // ต้องทำก่อน _pfSyncLayoutDown (ซึ่งเขียนทับด้วยค่าลำดับใหม่แล้ว)
     if(typeof _pfSyncLayoutDown==='function')_pfSyncLayoutDown();   // ดึงค่าจัดวางล่าสุดจากส่วนกลางมาทับก่อนอ่าน (ครั้งเดียวตอนเข้าหน้านี้ครั้งแรก)
     // ตั้งวันที่ = วันนี้
     var di=document.getElementById('pfDate');
@@ -12804,8 +12808,90 @@ function _pfSaveManualData(){
     Object.keys(tbls).forEach(function(k){
       data[k]=_pfManualCellsIn(tbls[k]).map(function(c){return c.textContent;});
     });
+    data._eqOrder=2;   // บันทึกด้วยลำดับคอลัมน์ใหม่ (HFNC ต่อจาก Ventilator)
     localStorage.setItem(PF_MANUAL_KEY,JSON.stringify(data));
   }catch(e){}
+}
+// 28 ก.ย. 2569: ย้ายแถว HFNC ขึ้นมาต่อจาก Ventilator ในตาราง "สรุปเครื่องมือแพทย์"
+// ค่าที่จำไว้ในเครื่อง (ชื่อแถว + ช่องไม่มีจ่าย) เก็บตามตำแหน่ง — ข้อมูลที่จำไว้ก่อนย้าย
+// ยังเป็นลำดับเดิม (…, Ventilator transfer, HFNC, …) ต้องสลับ 2 แถวนี้ให้ตรงลำดับใหม่
+// ก่อนเติมกลับ ไม่งั้นชื่อ "Ventilator transfer" จะไปอยู่บนแถวที่ตัวเลขเป็นของ HFNC
+// ทำเฉพาะเมื่อเจอชื่อแถวเรียงแบบเดิมจริง (แถวละ 2 ช่อง: ชื่อ + ไม่มีจ่าย) — ข้อมูลที่
+// บันทึกหลังย้ายแล้วจะไม่ตรงเงื่อนไข จึงไม่สลับซ้ำ
+// ═══════════ 28 ก.ย. 2569: ย้ายคอลัมน์ HFNC ไปต่อจาก Ventilator ═══════════
+// ลำดับเก่า [Ventilator, V.transfer, HFNC, HFNC transfer, BiPAP] → ใหม่ [Ventilator, HFNC,
+// V.transfer, HFNC transfer, BiPAP] = สลับคอลัมน์ชนิดที่ 2 กับ 3 เท่านั้น ข้อมูลที่เก็บตาม
+// ตำแหน่งมี 3 แหล่ง แปลงให้ครั้งเดียวต่อแหล่ง:
+//  1) ความกว้างคอลัมน์ในเครื่อง (pf_col_widths_pfFrontCols/pfSumCols1 + pfBackTopCols) — ธง PF_EQ_ORDER_FLAG
+//  2) ค่าพิมพ์เองในตารางสรุปยอด+stand by (pf_manual_data_v4 กลุ่ม sb) — ธง data._eqOrder
+//  3) snapshot ส่วนกลาง pf_layout_prefs (ความกว้าง + ตัวเลข stand by) — ธง snap.eqOrder
+// เครื่องที่ยังเปิดเวอร์ชันเก่าค้างไว้แล้วส่งค่าขึ้นมา จะไม่มีธง → ถูกแปลงให้ถูกเหมือนกัน
+// ขั้นของธง: (ไม่มี)=ลำดับเดิมทั้งหมด · 2=ย้ายแล้วเฉพาะหน้า 1+สรุปยอด (เวอร์ชัน 28 ก.ย. รอบแรก)
+//            · 3=ย้ายแล้วครบ รวมตารางยืม-คืนหน้า 2 (pfBackTopCols) — แปลงทีละขั้นที่ยังขาด
+var PF_EQ_ORDER_FLAG='pf_eq_col_order';
+// หน้า 2: 0=แผนก, 1-2=Ventilator ยืม/คืน, 3-4=V.transfer ยืม/คืน, 5-6=HFNC ยืม/คืน → สลับคู่ 3-4 กับ 5-6
+function _pfSwapBackEqCols(arr){
+  if(Array.isArray(arr)&&arr.length>6){var a=arr[3],b=arr[4];arr[3]=arr[5];arr[4]=arr[6];arr[5]=a;arr[6]=b;}
+  return arr;
+}
+// สลับ index 3↔4 ของ array ความกว้าง (0=ที่/รายการ, 1=แผนก, 2=Ventilator, 3-4 = คู่ที่สลับ)
+function _pfSwapEqCols(arr){
+  if(Array.isArray(arr)&&arr.length>4){var t=arr[3];arr[3]=arr[4];arr[4]=t;}
+  return arr;
+}
+function _pfMigrateEqOrderWidthsLocal(){
+  try{
+    var f=localStorage.getItem(PF_EQ_ORDER_FLAG);
+    if(f==='3')return;
+    if(f!=='2'){
+      ['pfFrontCols','pfSumCols1'].forEach(function(id){
+        var s=localStorage.getItem('pf_col_widths_'+id);if(!s)return;
+        var a=JSON.parse(s);if(!Array.isArray(a))return;
+        localStorage.setItem('pf_col_widths_'+id,JSON.stringify(_pfSwapEqCols(a)));
+      });
+    }
+    var sb=localStorage.getItem('pf_col_widths_pfBackTopCols');
+    if(sb){var ab=JSON.parse(sb);if(Array.isArray(ab))localStorage.setItem('pf_col_widths_pfBackTopCols',JSON.stringify(_pfSwapBackEqCols(ab)));}
+    localStorage.setItem(PF_EQ_ORDER_FLAG,'3');
+  }catch(e){}
+}
+function _pfConvertLayoutSnapEqOrder(snap){
+  if(!snap)return;
+  if(snap.eqOrder!==2){   // ยังไม่เคยแปลงขั้น 2 (หน้า 1 + สรุปยอด + stand by)
+    if(snap.cols)['pfFrontCols','pfSumCols1'].forEach(function(id){if(Array.isArray(snap.cols[id]))_pfSwapEqCols(snap.cols[id]);});
+    // ตัวเลข stand by: values = [Ventilator, V.transfer, HFNC, HFNC transfer, BiPAP] → สลับ 1↔2
+    if(Array.isArray(snap.standby))snap.standby.forEach(function(r){
+      if(r&&Array.isArray(r.values)&&r.values.length>2){var t=r.values[1];r.values[1]=r.values[2];r.values[2]=t;}
+    });
+  }
+  // ขั้น 3: ตารางยืม-คืนหน้า 2
+  if(snap.cols&&Array.isArray(snap.cols.pfBackTopCols))_pfSwapBackEqCols(snap.cols.pfBackTopCols);
+  snap.eqOrder=3;
+}
+// ค่าที่จำไว้ของตารางสรุปยอด (เรียงตามลำดับช่องพิมพ์เอง) — หาทุกแถวที่ 5 ช่องท้ายเป็นช่อง
+// ชนิดเครื่องที่พิมพ์เองได้ครบ (หัวตาราง, ยอดยืม/คืน/คงเหลือ, stand by ทุกแผนก) แล้วสลับ
+// ค่าช่องที่ 2↔3 ของ 5 ช่องนั้น — แถว "ยอดยกมา" (นับอัตโนมัติ ไม่ได้จำ) จะถูกข้ามเอง
+function _pfMigrateSbEqOrder(arr,table){
+  if(!table||!Array.isArray(arr))return;
+  var cells=_pfManualCellsIn(table);
+  Array.prototype.forEach.call(table.querySelectorAll('tr'),function(tr){
+    var tds=tr.children;if(tds.length<6)return;
+    var idx=[];
+    for(var j=tds.length-5;j<tds.length;j++)idx.push(cells.indexOf(tds[j]));
+    if(idx.some(function(x){return x<0;}))return;
+    var a=idx[1],b=idx[2];
+    if(b<arr.length){var t=arr[a];arr[a]=arr[b];arr[b]=t;}
+  });
+}
+function _pfMigrateHmeHfncOrder(arr){
+  for(var i=0;i+3<arr.length;i++){
+    if(String(arr[i]).trim()==='Ventilator transfer'&&String(arr[i+2]).trim()==='HFNC'){
+      var a=arr[i],b=arr[i+1];
+      arr[i]=arr[i+2];arr[i+1]=arr[i+3];arr[i+2]=a;arr[i+3]=b;
+      return true;
+    }
+  }
+  return false;
 }
 function _pfRestoreManualData(){
   try{
@@ -12815,6 +12901,8 @@ function _pfRestoreManualData(){
     var tbls=_pfManualTables();
     Object.keys(tbls).forEach(function(k){
       var arr=data[k];if(!Array.isArray(arr))return;
+      if(k==='hme')_pfMigrateHmeHfncOrder(arr);
+      if(k==='sb'&&data._eqOrder!==2)_pfMigrateSbEqOrder(arr,tbls[k]);
       var cells=_pfManualCellsIn(tbls[k]);
       var n=Math.min(arr.length,cells.length);
       for(var i=0;i<n;i++)cells[i].textContent=arr[i];
@@ -13247,6 +13335,13 @@ window.loadEquipmentUnits=async function(){
   window._EQ_UNITS=grp;
   window._EQ_UNITS_BY_ID=byId;
   _invRecalcFromUnits();
+  // หน้าพิมพ์ฟอร์ม: ตาราง "สรุปเครื่องมือแพทย์" คำนวณจาก _EQ_UNITS แต่ถูกเติมแค่ตอน pfReload()
+  // (หลังใบยืมโหลดเสร็จ) — loadAll() ไม่รอทะเบียนเครื่องมือ ถ้าเปิดหน้าพิมพ์ฟอร์มก่อนทะเบียน
+  // โหลดเสร็จ ตารางจะว่างค้างไว้ (บั๊กเดิม เจอจริง 28 ก.ย. 2569) → เติมใหม่ทุกครั้งที่ทะเบียนโหลดเสร็จ
+  // ถ้าหน้าพิมพ์ฟอร์มเคยเปิดแล้ว (pfFillHmeAll เขียนเฉพาะช่องตัวเลขอัตโนมัติ id pfTot/Rep/Dis/Dept/Loan/Rem)
+  if(typeof _pfInited!=='undefined'&&_pfInited&&typeof pfFillHmeAll==='function'){
+    try{pfFillHmeAll();}catch(e){console.error('pfFillHmeAll:',e);}
+  }
 };
 
 // นับ Total/ซ่อม/รอจำหน่าย/ForDept จากรายเครื่องจริง แล้วเขียนกลับเข้า
