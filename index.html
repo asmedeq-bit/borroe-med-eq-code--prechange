@@ -752,7 +752,7 @@ function toggleTheme(){
     </div>
   </div>
   <div class="card">
-    <div class="ctitle">🔧 เลือกรายการเครื่องมือแพทย์ <span style="font-size:11px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0">(เลือกได้ 1 รายการ — คลิกที่การ์ด)</span></div>
+    <div class="ctitle">🔧 เลือกรายการเครื่องมือแพทย์ <span style="font-size:11px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0">(เลือกได้หลายชนิด/หลายเครื่อง — คลิกการ์ดเพื่อเลือก, กด − / + เพื่อกำหนดจำนวน · ระบบแยกเป็น 1 ใบยืมต่อ 1 เครื่อง)</span></div>
 
     
 
@@ -764,6 +764,7 @@ function toggleTheme(){
     </div>
 
     <div id="eqCardGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px"></div>
+    <div id="loanEqSummary" style="display:none;margin-bottom:12px;padding:9px 12px;border:1px solid rgba(0,200,255,.3);background:rgba(0,200,255,.06);border-radius:7px;font-size:13px;color:var(--tx);line-height:1.6"></div>
     <div class="bgrp">
       <button class="btn bp" id="submitLoanBtn" onclick="submitLoan()">📤 ส่งแบบฟอร์มยืม</button>
       <button class="btn bg" onclick="clearLoan()">🗑 ล้างข้อมูล</button>
@@ -2124,7 +2125,7 @@ function toggleTheme(){
       <div class="wf-num c1">1</div>
       <div class="wf-body">
         <div class="wt">กรอกแบบฟอร์มแจ้งยืม</div>
-        <div class="wd">กรอก วันที่ยืม / ชื่อผู้ยืม / แผนก / ชื่อผู้ป่วย แล้วคลิกการ์ดเครื่องมือที่ต้องการ กด "📤 ส่งแบบฟอร์มยืม" — ได้รับ LoanID</div>
+        <div class="wd">กรอก วันที่ยืม / ชื่อผู้ยืม / แผนก / ชื่อผู้ป่วย แล้วคลิกการ์ดเครื่องมือที่ต้องการ (เลือกได้หลายชนิด กด − / + กำหนดจำนวนเครื่อง) กด "📤 ส่งแบบฟอร์มยืม" — ได้รับ LoanID แยก 1 ใบต่อ 1 เครื่อง</div>
         <span class="who" style="color:var(--ac1)">👤 แผนกผู้ยืม</span>
       </div>
     </div>
@@ -5984,8 +5985,9 @@ function toggleStandby(){
   var sp=document.getElementById('standbyPanel');
   if(_standbySelected){
     // deselect regular cards first
-    _selEqIdx=-1;
-    EQL.forEach(function(_,j){var card=document.getElementById('eqcard_'+j),chk=document.getElementById('eqcheck_'+j);if(card){card.style.borderColor='var(--bd)';card.style.background='var(--bg)';card.style.boxShadow='';}if(chk)chk.style.display='none';});
+    _selEqIdx=-1;_loanEqQty={};
+    EQL.forEach(function(_,j){_loanApplyCardUI(j);var vr=document.getElementById('vhrows_'+j);if(vr)vr.innerHTML='';});
+    _loanUpdateSummary();
     if(sc){sc.style.borderColor='#f59e0b';sc.style.background='rgba(245,158,11,.14)';sc.style.boxShadow='0 0 0 2px rgba(245,158,11,.4)';}
     if(sv)sv.style.display='flex';
     if(sp)sp.style.display='block';
@@ -6059,38 +6061,131 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 });
 
+// ── เลือกเครื่องมือได้หลายชนิด/หลายเครื่อง — ตอนส่งแยกเป็น 1 ใบยืมต่อ 1 เครื่อง ──
+// เก็บจำนวนต่อชนิดตาม index ใน EQL (ตรงกับ id การ์ด eqcard_i) — rebuildEqCards()
+// ล้างค่านี้ทุกครั้งที่รายชื่อเครื่องมือถูกสร้างใหม่ index จึงไม่เพี้ยน
+var _loanEqQty={};          // {index ใน EQL: จำนวนเครื่อง}
+var _loanSubmitting=false;  // ล็อกการเลือก/ล้างฟอร์มระหว่างกำลังส่ง
+var _LOAN_EQ_MAX=20;        // จำนวนสูงสุดต่อชนิด (เท่ากับบันทึกยืมด่วน)
+function _isVhEq(name){return ['Ventilator','HFNC'].indexOf(name)>=0;}
 function buildEqCards(){var grid=document.getElementById('eqCardGrid');if(!grid)return;EQL.forEach(function(name,i){if(EQL_DISABLED.indexOf(name)!==-1)return;var card=document.createElement('div');card.id='eqcard_'+i;card.style.cssText='border:2px solid var(--bd);border-radius:8px;padding:12px 14px;cursor:pointer;transition:all .18s;background:var(--bg);position:relative;min-height:54px;display:flex;flex-direction:column;justify-content:center;gap:6px';card.innerHTML='<div style="font-size:13px;font-weight:600;color:var(--tx);line-height:1.4;padding-right:22px">'+name+'</div>'+(name==='อื่นๆ'?'<input type="text" id="oth_'+i+'" placeholder="ระบุรายละเอียด..." onclick="event.stopPropagation()" style="font-size:12px;padding:5px 8px;width:100%;border:1px solid var(--bd);border-radius:4px;background:var(--s1);color:var(--tx)">':'')
-      +(['Ventilator','HFNC'].indexOf(name)>=0?
-        '<div id="vhpanel_'+i+'" onclick="event.stopPropagation()" style="display:none;margin-top:10px;background:rgba(0,200,255,.05);border:1px solid rgba(0,200,255,.25);border-radius:7px;padding:12px">'
+      +'<div id="eqqty_'+i+'" onclick="event.stopPropagation()" style="display:none;align-items:center;gap:6px;cursor:default">'
+        +'<button type="button" class="abt" style="width:28px;height:28px;padding:0;font-size:16px;font-weight:700;line-height:1" onclick="_loanChangeQty('+i+',-1)" aria-label="ลดจำนวน">−</button>'
+        +'<span id="eqqtyn_'+i+'" style="min-width:24px;text-align:center;font-size:15px;font-weight:700;color:var(--ac);font-family:var(--mo)">1</span>'
+        +'<button type="button" class="abt" style="width:28px;height:28px;padding:0;font-size:16px;font-weight:700;line-height:1" onclick="_loanChangeQty('+i+',1)" aria-label="เพิ่มจำนวน">+</button>'
+        +'<span style="font-size:11px;color:var(--mu)">เครื่อง</span>'
+      +'</div>'
+      +(_isVhEq(name)?
+        '<div id="vhpanel_'+i+'" onclick="event.stopPropagation()" style="display:none;margin-top:4px;background:rgba(0,200,255,.05);border:1px solid rgba(0,200,255,.25);border-radius:7px;padding:12px;cursor:default">'
           +'<div style="font-size:10px;font-weight:700;color:var(--ac);text-transform:uppercase;letter-spacing:.5px;margin-bottom:9px">🔩 รายละเอียดเพิ่มเติมลงเฉพาะเครื่อง standby</div>'
-          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-            +'<div>'
-              +'<label style="font-size:11px;color:var(--mu);font-weight:700;display:block;margin-bottom:4px">หมายเลขเครื่อง (No.)</label>'
-              +'<input type="text" id="vheqno_'+i+'" placeholder="เช่น V-05, 12 ..." onclick="event.stopPropagation()" style="width:100%;padding:6px 8px;font-size:13px;background:var(--bg);border:1px solid rgba(0,200,255,.4);border-radius:5px;color:var(--tx)">'
-            +'</div>'
-            +'<div>'
-              +'<label style="font-size:11px;color:var(--mu);font-weight:700;display:block;margin-bottom:4px">Flow Meter No.</label>'
-              +'<input type="text" id="vhfmno_'+i+'" placeholder="เช่น 15, FM-03 ..." onclick="event.stopPropagation()" style="width:100%;padding:6px 8px;font-size:13px;background:var(--bg);border:1px solid rgba(0,200,255,.4);border-radius:5px;color:var(--tx)">'
-            +'</div>'
-          +'</div>'
+          +'<div id="vhrows_'+i+'"></div>'
         +'</div>'
       :'')
       +'<div id="eqcheck_'+i+'" style="display:none;position:absolute;top:8px;right:8px;width:22px;height:22px;background:var(--ac);border-radius:50%;align-items:center;justify-content:center;font-size:12px;color:#000;font-weight:700">✓</div>';card.addEventListener('click',function(){selEq(i);});grid.appendChild(card);});}
+// วาดหน้าตาการ์ดตามจำนวนที่เลือก (0 = ไม่เลือก)
+function _loanApplyCardUI(i){
+  var q=_loanEqQty[i]||0,on=q>0;
+  var card=document.getElementById('eqcard_'+i),chk=document.getElementById('eqcheck_'+i);
+  var qw=document.getElementById('eqqty_'+i),qn=document.getElementById('eqqtyn_'+i),vhp=document.getElementById('vhpanel_'+i);
+  if(card){card.style.borderColor=on?'var(--ac)':'var(--bd)';card.style.background=on?'rgba(0,200,255,.06)':'var(--bg)';card.style.boxShadow=on?'0 0 0 1px var(--ac)':'';}
+  if(chk)chk.style.display=on?'flex':'none';
+  if(qw)qw.style.display=on?'flex':'none';
+  if(qn)qn.textContent=String(q);
+  if(vhp)vhp.style.display=on?'block':'none';
+  // การ์ด Ventilator/HFNC ที่ถูกเลือก กว้าง 2 ช่อง ให้ช่องกรอก No. รายเครื่องไม่เบียด
+  if(card&&vhp)card.style.gridColumn=on?'span 2':'';
+}
+// ช่อง No./Flow Meter No. ของ Ventilator/HFNC — 1 แถวต่อ 1 เครื่อง (ไม่บังคับกรอก)
+// preset = [{no,fm},...] ใช้ตอนต้องเลื่อนค่าหลังส่งสำเร็จบางใบ; ไม่ส่งมา = จำค่าที่กรอกอยู่เดิม
+function _loanRenderVh(i,preset){
+  var box=document.getElementById('vhrows_'+i);if(!box)return;
+  var q=_loanEqQty[i]||0,vals=preset;
+  if(!vals){
+    vals=[];
+    for(var k=0;k<=_LOAN_EQ_MAX;k++){
+      var a=document.getElementById('vheqno_'+i+'_'+k);if(!a)break;
+      var b=document.getElementById('vhfmno_'+i+'_'+k);
+      vals.push({no:a.value,fm:b?b.value:''});
+    }
+  }
+  var inp='width:100%;padding:6px 8px;font-size:13px;background:var(--bg);border:1px solid rgba(0,200,255,.4);border-radius:5px;color:var(--tx)';
+  var lbl='font-size:11px;color:var(--mu);font-weight:700;display:block;margin-bottom:4px';
+  var html='';
+  for(var r=0;r<q;r++){
+    html+='<div style="display:grid;grid-template-columns:'+(q>1?'auto ':'')+'1fr 1fr;gap:10px;align-items:end'+(r?';margin-top:8px':'')+'">'
+      +(q>1?'<div style="font-size:11px;font-weight:700;color:var(--ac);padding-bottom:8px;min-width:22px">#'+(r+1)+'</div>':'')
+      +'<div>'+(r?'':'<label style="'+lbl+'">หมายเลขเครื่อง (No.)</label>')+'<input type="text" id="vheqno_'+i+'_'+r+'" placeholder="เช่น V-05, 12 ..." style="'+inp+'"></div>'
+      +'<div>'+(r?'':'<label style="'+lbl+'">Flow Meter No.</label>')+'<input type="text" id="vhfmno_'+i+'_'+r+'" placeholder="เช่น 15, FM-03 ..." style="'+inp+'"></div>'
+    +'</div>';
+  }
+  box.innerHTML=html;
+  for(var r2=0;r2<q&&r2<vals.length;r2++){
+    var ea=document.getElementById('vheqno_'+i+'_'+r2),eb=document.getElementById('vhfmno_'+i+'_'+r2);
+    if(ea)ea.value=vals[r2].no||'';if(eb)eb.value=vals[r2].fm||'';
+  }
+}
+// _selEqIdx เดิมยังเก็บไว้ (โค้ดส่วนอื่นอ้างถึง) = index แรกที่ถูกเลือก หรือ -1
+function _loanSyncSelIdx(){
+  var ks=Object.keys(_loanEqQty).filter(function(k){return _loanEqQty[k]>0;}).map(Number).sort(function(a,b){return a-b;});
+  _selEqIdx=ks.length?ks[0]:-1;
+}
+function _loanUpdateSummary(){
+  var box=document.getElementById('loanEqSummary'),btn=document.getElementById('submitLoanBtn');
+  var parts=[],total=0;
+  Object.keys(_loanEqQty).map(Number).sort(function(a,b){return a-b;}).forEach(function(i){
+    var q=_loanEqQty[i]||0;if(!q||EQL[i]===undefined)return;
+    total+=q;parts.push('<strong>'+esc(EQL[i])+'</strong> × '+q);
+  });
+  if(box){
+    if(!total){box.style.display='none';box.innerHTML='';}
+    else{box.style.display='block';box.innerHTML='📋 เลือกแล้ว <strong style="color:var(--ac)">'+total+'</strong> เครื่อง: '+parts.join(', ')
+      +'<div style="font-size:11px;color:var(--mu)">เมื่อกดส่ง ระบบจะสร้างใบยืมแยก 1 ใบต่อ 1 เครื่อง รวม <strong style="color:var(--ac)">'+total+'</strong> ใบ (ใช้ข้อมูลผู้ยืม/แผนก/ผู้ป่วยชุดเดียวกัน)</div>';}
+  }
+  if(btn&&!btn.disabled)btn.innerHTML='📤 ส่งแบบฟอร์มยืม'+(total>1?' ('+total+' ใบ)':'');
+}
+// คลิกการ์ด = เลือก (1 เครื่อง) / คลิกซ้ำ = ยกเลิกเลือกชนิดนั้น
 function selEq(i){
+  if(_loanSubmitting)return;
   // deselect standby
   _standbySelected=false;
   var sc=document.getElementById('standbyCard');var sv=document.getElementById('standbyCheck');var sp=document.getElementById('standbyPanel');
   if(sc){sc.style.borderColor='var(--wn)';sc.style.background='rgba(245,158,11,.05)';}
   if(sv)sv.style.display='none';if(sp)sp.style.display='none';
-  // select this card — hide all vhpanels first
-  EQL.forEach(function(_,j){var card=document.getElementById('eqcard_'+j),chk=document.getElementById('eqcheck_'+j);if(card){card.style.borderColor='var(--bd)';card.style.background='var(--bg)';card.style.boxShadow='';}if(chk)chk.style.display='none';var vhp=document.getElementById('vhpanel_'+j);if(vhp)vhp.style.display='none';});
-  var card=document.getElementById('eqcard_'+i),chk=document.getElementById('eqcheck_'+i);
-  if(card){card.style.borderColor='var(--ac)';card.style.background='rgba(0,200,255,.06)';card.style.boxShadow='0 0 0 1px var(--ac)';}
-  if(chk)chk.style.display='flex';
-  // show VH panel for Ventilator / HFNC only
-  var vhp=document.getElementById('vhpanel_'+i);
-  if(vhp){vhp.style.display='block';setTimeout(function(){var el=document.getElementById('vheqno_'+i);if(el)el.focus();},80);}
-  _selEqIdx=i;
+  if(_loanEqQty[i])delete _loanEqQty[i];else _loanEqQty[i]=1;
+  _loanApplyCardUI(i);
+  _loanRenderVh(i);
+  if(_loanEqQty[i]){setTimeout(function(){var el=document.getElementById('vheqno_'+i+'_0');if(el)el.focus();},80);}
+  _loanSyncSelIdx();
+  _loanUpdateSummary();
+}
+function _loanChangeQty(i,d){
+  if(_loanSubmitting)return;
+  var q=(_loanEqQty[i]||0)+d;
+  if(q>_LOAN_EQ_MAX){toast('เลือกได้สูงสุด '+_LOAN_EQ_MAX+' เครื่องต่อชนิด','warning');q=_LOAN_EQ_MAX;}
+  if(q<=0)delete _loanEqQty[i];else _loanEqQty[i]=q;
+  _loanApplyCardUI(i);
+  _loanRenderVh(i);
+  _loanSyncSelIdx();
+  _loanUpdateSummary();
+}
+// รวบรวมรายการที่จะส่ง: 1 รายการ = 1 เครื่อง = 1 ใบยืม (เรียงตามลำดับการ์ด)
+function _loanCollectUnits(){
+  var units=[];
+  Object.keys(_loanEqQty).map(Number).sort(function(a,b){return a-b;}).forEach(function(i){
+    var q=_loanEqQty[i]||0,name=EQL[i];if(!q||name===undefined)return;
+    var oEl=document.getElementById('oth_'+i);var base=oEl?oEl.value.trim():'';
+    for(var k=0;k<q;k++){
+      var no='',fm='';
+      if(_isVhEq(name)){
+        var a=document.getElementById('vheqno_'+i+'_'+k),b=document.getElementById('vhfmno_'+i+'_'+k);
+        no=a?a.value.trim():'';fm=b?b.value.trim():'';
+      }
+      var p=[];if(no)p.push('No.'+no);if(fm)p.push('Flow Meter No.'+fm);
+      var detail=p.length?(p.join(' | ')+(base?' | '+base:'')):base;
+      units.push({i:i,k:k,qty:q,name:name,detail:detail,no:no});
+    }
+  });
+  return units;
 }
 // ─────────────────────────────────────────────────────────── §UTIL-CORE
 // Utility เล็ก (escape/สถานะ/badge/sort)
@@ -6359,45 +6454,93 @@ async function submitLoan(){
     if(flowParts.length)detail+=' | '+flowParts.join(', ');
     equipmentList=[{name:sbyType.value+' standby',qty:1,detail:detail,standby:true,eqNo:sbyNo}];
   } else {
-    // ── regular eq path ──
-    if(_selEqIdx<0){bigToast('กรุณาเลือกรายการเครื่องมือ 1 รายการ','error');return;}
-    var name=EQL[_selEqIdx];var oEl=document.getElementById('oth_'+_selEqIdx);
-    // ── Ventilator / HFNC extra fields (ไม่บังคับ) ──
-    var _vhEqNo='',_vhFmNo='';
-    if(['Ventilator','HFNC'].indexOf(name)>=0){
-      var _vhEqNoEl=document.getElementById('vheqno_'+_selEqIdx);
-      var _vhFmNoEl=document.getElementById('vhfmno_'+_selEqIdx);
-      _vhEqNo=_vhEqNoEl?_vhEqNoEl.value.trim():'';
-      _vhFmNo=_vhFmNoEl?_vhFmNoEl.value.trim():'';
+    // ── regular eq path — หลายชนิด/หลายเครื่อง แยก 1 ใบต่อ 1 เครื่อง ──
+    var _units=_loanCollectUnits();
+    if(!_units.length){bigToast('กรุณาเลือกรายการเครื่องมือ\nอย่างน้อย 1 รายการ','error');return;}
+    // กันพิมพ์ No. เครื่องซ้ำกันเองในการส่งรอบเดียว (Ventilator/HFNC)
+    var _seenNo={};
+    for(var _u=0;_u<_units.length;_u++){
+      var _un=_units[_u];if(!_un.no)continue;
+      var _nk=_un.name+'||'+_un.no.toLowerCase();
+      if(_seenNo[_nk]){bigToast('หมายเลขเครื่องซ้ำกัน\n'+esc(_un.name)+' No.'+esc(_un.no)+'\nกรอกซ้ำมากกว่า 1 ช่อง','error');var _fe=document.getElementById('vheqno_'+_un.i+'_'+_un.k);if(_fe)_fe.focus();return;}
+      _seenNo[_nk]=true;
     }
-    var _vhParts=[];
-    if(_vhEqNo)_vhParts.push('No.'+_vhEqNo);
-    if(_vhFmNo)_vhParts.push('Flow Meter No.'+_vhFmNo);
-    var _baseDetail=oEl?oEl.value.trim():'';
-    var _fullDetail=_vhParts.length?(_vhParts.join(' | ')+(_baseDetail?' | '+_baseDetail:'')):_baseDetail;
-    equipmentList=[{name:name,qty:1,detail:_fullDetail}];
+    if(_units.length>1){
+      var _cnt={},_ord=[];
+      _units.forEach(function(u){if(!_cnt[u.name]){_cnt[u.name]=0;_ord.push(u.name);}_cnt[u.name]++;});
+      if(!confirm('ยืนยันส่งแบบฟอร์มยืม '+_units.length+' ใบ (แยก 1 ใบต่อ 1 เครื่อง)\n\n'+_ord.map(function(n){return '• '+n+' × '+_cnt[n];}).join('\n')+'\n\nผู้ยืม: '+borrowerName+'\nแผนก: '+deptName+'\nผู้ป่วย: '+patientName))return;
+    }
   }
+  // งานที่จะส่ง: standby = 1 ใบเดิม / ปกติ = 1 ใบต่อ 1 เครื่อง
+  var _jobs=_standbySelected?[{equipmentList:equipmentList,unit:null}]:_units.map(function(u){return{equipmentList:[{name:u.name,qty:1,detail:u.detail}],unit:u};});
   var _slBtn=document.getElementById('submitLoanBtn');
   if(_slBtn){if(_slBtn.disabled)return;_slBtn.disabled=true;_slBtn.dataset._t=_slBtn.innerHTML;_slBtn.innerHTML='⏳ กำลังส่ง...';}
 // ─────────────────────────────────────────────────────────── §TAB-DAILY
 // แท็บ "สรุปรายวัน" (Daily)
 // ───────────────────────────────────────────────────────────
+  _loanSubmitting=true;
+  var _done=[];   // ใบที่สร้างสำเร็จแล้ว (ส่งทีละใบตามลำดับ)
   try{
-    var id=await API.submitLoan({loanDate,borrowerName,deptCode,deptName,patientName,equipmentList});
-    bigToast('ส่งแบบฟอร์มสำเร็จ!\nID: '+id,'success');clearLoan();setTimeout(loadAll,1500);
-  }catch(e){bigToast('เกิดข้อผิดพลาด:\n'+e.message,'error');}
-  finally{if(_slBtn){_slBtn.disabled=false;_slBtn.innerHTML=_slBtn.dataset._t;}}
+    for(var _j=0;_j<_jobs.length;_j++){
+      if(_slBtn&&_jobs.length>1)_slBtn.innerHTML='⏳ กำลังส่ง '+(_j+1)+'/'+_jobs.length+'...';
+      var id=await API.submitLoan({loanDate,borrowerName,deptCode,deptName,patientName,equipmentList:_jobs[_j].equipmentList});
+      _done.push({id:id,job:_jobs[_j]});
+      // ใบนี้เครื่องนี้สร้างเอง — อัปเดตฐานของระบบแจ้งเตือนใบยืมใหม่ กันเครื่องตัวเองเด้งเตือนระหว่างส่งหลายใบ
+      if(typeof _lastSeenLoanID!=='undefined')_lastSeenLoanID=S(id);
+    }
+    _loanSubmitting=false;
+    if(_done.length===1)bigToast('ส่งแบบฟอร์มสำเร็จ!\nID: '+_done[0].id,'success');
+    else{
+      var _ids=_done.map(function(d){return d.id;});
+      bigToast('ส่งแบบฟอร์มสำเร็จ '+_done.length+' ใบ!\n'+_ids.slice(0,8).join('\n')+(_ids.length>8?'\n… และอีก '+(_ids.length-8)+' ใบ':''),'success');
+    }
+    clearLoan();setTimeout(loadAll,1500);
+  }catch(e){
+    _loanSubmitting=false;
+    if(!_done.length){bigToast('เกิดข้อผิดพลาด:\n'+e.message,'error');}
+    else{
+      // ส่งได้บางใบ — เอาเครื่องที่สร้างใบสำเร็จแล้วออกจากฟอร์ม เหลือเฉพาะที่ยังไม่ได้ส่ง
+      // (กดส่งอีกครั้งจะส่งเฉพาะส่วนที่เหลือ ไม่สร้างใบซ้ำ)
+      _loanRemoveDoneUnits(_done);
+      var _failJob=_jobs[_done.length];
+      var _failName=_failJob&&_failJob.unit?_failJob.unit.name+(_failJob.unit.qty>1?' #'+(_failJob.unit.k+1):''):'';
+      bigToast('ส่งได้ '+_done.length+' จาก '+_jobs.length+' ใบ\nล้มเหลวที่: '+esc(_failName)+'\n'+e.message+'\nรายการที่ส่งสำเร็จถูกนำออกจากฟอร์มแล้ว — ตรวจสอบหน้า "รายการยืม-คืน" ก่อน แล้วกดส่งอีกครั้งเพื่อส่งส่วนที่เหลือ','warning');
+      setTimeout(loadAll,1500);
+    }
+  }
+  finally{_loanSubmitting=false;if(_slBtn){_slBtn.disabled=false;_slBtn.innerHTML=_slBtn.dataset._t;}_loanUpdateSummary();}
+}
+// หลังส่งได้บางใบ: ลดจำนวนของแต่ละชนิดตามที่สำเร็จ และเลื่อนค่า No./Flow Meter
+// ของ Ventilator/HFNC ที่ยังไม่ได้ส่งขึ้นมาแทน (ส่งตามลำดับ ใบที่สำเร็จคือแถวแรกๆ เสมอ)
+function _loanRemoveDoneUnits(done){
+  var ok={};
+  done.forEach(function(d){if(d.job&&d.job.unit){var i=d.job.unit.i;ok[i]=(ok[i]||0)+1;}});
+  Object.keys(ok).map(Number).forEach(function(i){
+    var q=_loanEqQty[i]||0,rest=[];
+    for(var k=ok[i];k<q;k++){
+      var a=document.getElementById('vheqno_'+i+'_'+k),b=document.getElementById('vhfmno_'+i+'_'+k);
+      rest.push({no:a?a.value:'',fm:b?b.value:''});
+    }
+    var nq=q-ok[i];
+    if(nq>0)_loanEqQty[i]=nq;else{delete _loanEqQty[i];var o=document.getElementById('oth_'+i);if(o)o.value='';}
+    _loanApplyCardUI(i);
+    _loanRenderVh(i,rest);
+  });
+  _loanSyncSelIdx();
+  _loanUpdateSummary();
 }
 function clearLoan(){
+  if(_loanSubmitting){toast('กำลังส่งแบบฟอร์มอยู่ — รอให้เสร็จก่อน','warning');return;}
   ['borrowerName','patientName','deptSearch','selDeptCode','selDeptName'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
   document.getElementById('selDeptDisp').style.display='none';
   var oi=document.getElementById('deptOther');if(oi){oi.style.display='none';oi.value='';}
   // clear regular eq cards
-  _selEqIdx=-1;
-  EQL.forEach(function(_,i){var card=document.getElementById('eqcard_'+i),chk=document.getElementById('eqcheck_'+i);if(card){card.style.borderColor='var(--bd)';card.style.background='var(--bg)';card.style.boxShadow='';}if(chk)chk.style.display='none';var o=document.getElementById('oth_'+i);if(o)o.value='';var vhp=document.getElementById('vhpanel_'+i);if(vhp)vhp.style.display='none';var vhn=document.getElementById('vheqno_'+i);if(vhn)vhn.value='';var vhf=document.getElementById('vhfmno_'+i);if(vhf)vhf.value='';});
+  _selEqIdx=-1;_loanEqQty={};
+  EQL.forEach(function(_,i){_loanApplyCardUI(i);var o=document.getElementById('oth_'+i);if(o)o.value='';var vr=document.getElementById('vhrows_'+i);if(vr)vr.innerHTML='';});
   // clear standby
   clearStandby();
   setToday();
+  _loanUpdateSummary();
 }
 
 // ═══════════ บันทึกยืมด่วน (ครบในหน้าเดียว) — ไม่แตะ submitLoan/saveBorrow เดิม ═══════════
@@ -11389,7 +11532,8 @@ function rebuildStaffSelects(){
 }
 function rebuildEqCards(){
   var grid=document.getElementById('eqCardGrid');if(!grid)return;
-  grid.innerHTML='';_selEqIdx=-1;buildEqCards();
+  grid.innerHTML='';_selEqIdx=-1;_loanEqQty={};buildEqCards();
+  if(typeof _loanUpdateSummary==='function')_loanUpdateSummary();
 }
 function rebuildEqSelects(){
   ['allEq','recEq','dailyFilter','addLoanEq','admBorEq'].forEach(function(id){
@@ -15041,7 +15185,7 @@ function manDL(fmt){
     ['ผู้ใช้งาน','แผนกผู้ยืม','กรอกแบบฟอร์มแจ้งยืมเครื่องมือให้ผู้ป่วย','ไม่ต้องมีรหัสผ่าน'],
     ['ผู้ใช้งาน','จนท.บริการเครื่องมือฯ','บันทึกการจ่าย คืน และโอนเครื่องมือ','ต้องมีรหัสผ่าน'],
     ['ผู้ใช้งาน','Admin','จัดการข้อมูลทั้งหมด แก้ไข เพิ่ม ลบ ตั้งค่า','ต้องมีรหัส Admin'],
-    ['เมนู','📋 ลงบันทึกแจ้งยืม','กรอกข้อมูลผู้ยืม เลือกเครื่องมือ ส่งแบบฟอร์ม','สำหรับแผนกผู้ยืม'],
+    ['เมนู','📋 ลงบันทึกแจ้งยืม','กรอกข้อมูลผู้ยืม เลือกเครื่องมือ (หลายชนิด/หลายเครื่องได้) ส่งแบบฟอร์ม — แยก 1 ใบต่อ 1 เครื่อง','สำหรับแผนกผู้ยืม'],
     ['เมนู','📝 ลงบันทึกยืม-คืน-โอน','จัดการรายการ บันทึกจ่าย รับคืน โอนเครื่องมือ','ต้องรหัสผ่าน'],
     ['เมนู','📅 สรุปรายการประจำวัน','ดูรายการกำลังยืมอยู่ทั้งหมด Real-time','อัปเดตทุก 5 นาที'],
     ['เมนู','📊 Dashboard','ภาพรวม สถิติ แจ้งเตือน HFNC','Real-time'],
