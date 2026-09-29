@@ -5480,6 +5480,22 @@ var SB = {
     return r;
   },
   get: async function(table,qs){var r=await SB._fetch(SB.url(table,qs),{headers:SB.headers()});if(!r.ok)throw new Error(await r.text());return r.json();},
+  // เหมือน get แต่ขอ "จำนวนแถวจริงทั้งหมด" มาด้วย (Prefer: count=exact → header Content-Range
+  // เช่น "0-2212/2213" — วิธีเดียวกับแท็บ 📡 สถานะ Supabase ที่ใช้อยู่แล้ว) ใช้กับ query ใหญ่ที่มี
+  // เพดาน limit: ถ้าได้แถวน้อยกว่าจำนวนจริง (ถูกตัดโดย limit หรือเพดาน Max rows ของ Supabase)
+  // → เตือนผ่าน _warnTruncated แทนการหายเงียบ · ไม่มี Content-Range (เช่น EXE / retry หลัง 401)
+  // → ใช้เกณฑ์สำรอง "ได้แถวเท่ากับ limit พอดี" · การตรวจพังเอง → คืนข้อมูลตามปกติ ไม่กระทบการโหลด
+  getChecked: async function(table,qs,label){
+    var h=SB.headers();h.Prefer='count=exact';
+    var r=await SB._fetch(SB.url(table,qs),{headers:h});if(!r.ok)throw new Error(await r.text());
+    var rows=await r.json();
+    try{
+      var total=null,mm=(r.headers.get('content-range')||'').match(/\/(\d+)$/);if(mm)total=parseInt(mm[1],10);
+      var lm=/(?:^|&)limit=(\d+)/.exec(qs||''),lim=lm?parseInt(lm[1],10):null;
+      if(Array.isArray(rows)&&((total!==null&&rows.length<total)||(total===null&&lim!==null&&rows.length>=lim)))_warnTruncated(label||table,rows.length,total,lim);
+    }catch(e){}
+    return rows;
+  },
   post: async function(table,body){var r=await SB._fetch(SB.url(table),{method:'POST',headers:SB.headers(),body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json();},
   patch: async function(table,qs,body){var r=await SB._fetch(SB.url(table,qs),{method:'PATCH',headers:SB.headers(),body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json();},
   del: async function(table,qs){var r=await SB._fetch(SB.url(table,qs),{method:'DELETE',headers:SB.headers()});if(!r.ok)throw new Error(await r.text());return r.status===204?[]:r.json();},
@@ -5497,7 +5513,7 @@ var API = {
     var query=fullHistory
       ?'order=created_at.desc&limit=50000'
       :'or=(status.eq.ACTIVE,status.eq.PENDING,status.eq.ACC_PENDING,and(status.eq.RETURNED,loan_date.gte.'+cutoffStr+'),and(status.eq.CANCELLED,loan_date.gte.'+cutoffStr+'))&order=created_at.desc&limit=10000';
-    var rows=await SB.get('loan_requests',query);
+    var rows=await SB.getChecked('loan_requests',query,'ใบยืม (loan_requests)');
     return rows.map(function(r){return{LoanID:r.loan_id,LoanDate:r.loan_date,BorrowerName:r.borrower_name,DeptCode:r.dept_code,DeptName:r.dept_name,PatientName:r.patient_name,EquipmentList:Array.isArray(r.equipment_list)?r.equipment_list:[],Status:r.status,CreatedAt:r.created_at||''};});
   },
   getAllBorrows: async function(fullHistory){
@@ -5506,7 +5522,7 @@ var API = {
       ?'order=created_at.desc&limit=100000'
       // RETURNED: ใช้ return_date (วันที่คืนจริง) แทน created_at เพื่อให้ครอบคลุมรายการที่เพิ่งคืน
       :'or=(status.eq.ACTIVE,status.eq.ACC_PENDING,and(status.eq.RETURNED,return_date.gte.'+cutoffStr+'))&order=created_at.desc&limit=20000';
-    var rows=await SB.get('borrow_records',query);
+    var rows=await SB.getChecked('borrow_records',query,'บันทึกยืม (borrow_records)');
     return rows.map(function(r){
       var ACC_MAP=[{id:'a1',name:'Oxygen flow meter pipeline with power take off',col:'acc1_flow_meter_pto'},{id:'a2',name:'Oxygen flow meter pipeline 70 LPM',col:'acc2_flow_meter_70'},{id:'a3',name:'Self inflating bag',col:'acc3_self_inflating'},{id:'a4',name:'full face mask',col:'acc4_full_face_mask'},{id:'a5',name:'Nasal cannula HFNC',col:'acc5_nasal_cannula'},{id:'a7',name:'Oxygen flow meter regulator with power take off',col:'acc7_regulator_pto'},{id:'a6',name:'อื่นๆ',col:'acc6_other'}];
       var accs=[];
@@ -5516,15 +5532,15 @@ var API = {
       if(Array.isArray(r.accessories))accs=accs.concat(r.accessories);
       var retAccs=r.returned_accs;if(!Array.isArray(retAccs))retAccs=[];
       var th=r.transfer_history;if(!Array.isArray(th))th=[];
-      return{RecordID:r.record_id,LoanID:r.loan_id,GiverName:r.giver_name||'',EquipmentNo:r.equipment_no||'',EquipItemIndex:r.equip_item_index||0,Accessories:accs,ReturnRemark:r.return_remark||'',ReturnDetail:r.return_detail||'',ReturnDate:r.return_date||'',MachineReturnDate:r.machine_return_date||'',MachineReturned:r.machine_returned||false,ReturnedAccs:retAccs,TransferHistory:th,Status:r.status,ReceiverName:r.receiver_name||'',ReturnedAt:r.returned_at||''};
+      return{RecordID:r.record_id,LoanID:r.loan_id,GiverName:r.giver_name||'',EquipmentNo:r.equipment_no||'',EquipItemIndex:r.equip_item_index||0,Accessories:accs,ReturnRemark:r.return_remark||'',ReturnDetail:r.return_detail||'',ReturnDate:r.return_date||'',MachineReturnDate:r.machine_return_date||'',MachineReturned:r.machine_returned||false,ReturnedAccs:retAccs,TransferHistory:th,Status:r.status,ReceiverName:r.receiver_name||'',ReturnedAt:r.returned_at||'',CreatedAt:r.created_at||''};
     });
   },
   getArchivedLoans: async function(){
-    var rows=await SB.get('loan_requests_archive','order=created_at.desc&limit=50000');
+    var rows=await SB.getChecked('loan_requests_archive','order=created_at.desc&limit=50000','Archive ใบยืม');
     return rows.map(function(r){return{LoanID:r.loan_id,LoanDate:r.loan_date,BorrowerName:r.borrower_name,DeptCode:r.dept_code,DeptName:r.dept_name,PatientName:r.patient_name,EquipmentList:Array.isArray(r.equipment_list)?r.equipment_list:[],Status:r.status,CreatedAt:r.created_at||''};});
   },
   getArchivedBorrows: async function(){
-    var rows=await SB.get('borrow_records_archive','order=created_at.desc&limit=100000');
+    var rows=await SB.getChecked('borrow_records_archive','order=created_at.desc&limit=100000','Archive บันทึกยืม');
     return rows.map(function(r){
       var ACC_MAP=[{id:'a1',name:'Oxygen flow meter pipeline with power take off',col:'acc1_flow_meter_pto'},{id:'a2',name:'Oxygen flow meter pipeline 70 LPM',col:'acc2_flow_meter_70'},{id:'a3',name:'Self inflating bag',col:'acc3_self_inflating'},{id:'a4',name:'full face mask',col:'acc4_full_face_mask'},{id:'a5',name:'Nasal cannula HFNC',col:'acc5_nasal_cannula'},{id:'a7',name:'Oxygen flow meter regulator with power take off',col:'acc7_regulator_pto'},{id:'a6',name:'อื่นๆ',col:'acc6_other'}];
       var accs=[];
@@ -5532,7 +5548,7 @@ var API = {
       if(Array.isArray(r.accessories))accs=accs.concat(r.accessories);
       var retAccs=r.returned_accs;if(!Array.isArray(retAccs))retAccs=[];
       var th=r.transfer_history;if(!Array.isArray(th))th=[];
-      return{RecordID:r.record_id,LoanID:r.loan_id,GiverName:r.giver_name||'',EquipmentNo:r.equipment_no||'',EquipItemIndex:r.equip_item_index||0,Accessories:accs,ReturnRemark:r.return_remark||'',ReturnDetail:r.return_detail||'',ReturnDate:r.return_date||'',MachineReturnDate:r.machine_return_date||'',MachineReturned:r.machine_returned||false,ReturnedAccs:retAccs,TransferHistory:th,Status:r.status,ReceiverName:r.receiver_name||'',ReturnedAt:r.returned_at||''};
+      return{RecordID:r.record_id,LoanID:r.loan_id,GiverName:r.giver_name||'',EquipmentNo:r.equipment_no||'',EquipItemIndex:r.equip_item_index||0,Accessories:accs,ReturnRemark:r.return_remark||'',ReturnDetail:r.return_detail||'',ReturnDate:r.return_date||'',MachineReturnDate:r.machine_return_date||'',MachineReturned:r.machine_returned||false,ReturnedAccs:retAccs,TransferHistory:th,Status:r.status,ReceiverName:r.receiver_name||'',ReturnedAt:r.returned_at||'',CreatedAt:r.created_at||''};
     });
   },
   submitLoan: async function(data){
@@ -5655,6 +5671,17 @@ function _lsSet(key,val){try{localStorage.setItem('meq_'+key,JSON.stringify(val)
 // ดักทุก error ที่ไม่ได้ถูกจับด้วย try/catch ที่ไหนในแอป + ทุก Promise ที่ reject
 // แล้วส่งขึ้น error_logs อัตโนมัติ — ไม่บล็อกการทำงานจริงเด็ดขาด (fire-and-forget)
 var _lastErrLog={msg:'',time:0};
+// เตือนข้อมูลถูกตัด — ครั้งเดียวต่อชุดข้อมูลต่อการเปิดแอป (โหลดซ้ำทุก 15 นาทีไม่เด้งซ้ำ)
+// กล่องเตือนค้างจนกดตกลง + บันทึกลง Error Log (ดูย้อนหลังได้ที่ Admin → 🐛 Error Log)
+var _truncWarned={};
+function _warnTruncated(label,got,total,limit){
+  if(_truncWarned[label])return;_truncWarned[label]=true;
+  var msg='ข้อมูล "'+label+'" โหลดมาไม่ครบ: ได้ '+got+' แถว'+(total!==null?' จากทั้งหมด '+total+' แถว':' (ชนเพดาน limit '+limit+')')
+    +' — บางรายการจะไม่แสดงในแอป ควรทำ Archive ข้อมูลเก่า หรือแจ้งผู้ดูแลระบบ';
+  try{console.error('[TRUNCATED] '+msg);}catch(e){}
+  try{if(typeof _logErrorToServer==='function')_logErrorToServer(msg,'','truncation-guard');}catch(e){}
+  try{if(typeof bigToast==='function')bigToast('⚠️ ข้อมูลโหลดไม่ครบ\n'+msg,'warning');}catch(e){}
+}
 function _logErrorToServer(message,stack,context){
   try{
     var now=Date.now();
@@ -6235,6 +6262,18 @@ function _renderMainPages(){
     setTimeout(function(){if(renderFns[k])renderFns[k]();},30*(idx+1));
   });
 }
+// ── ประหยัดปริมาณข้อมูลรับส่ง (Supabase Free plan) ──
+// เดิม: ทุกเครื่องที่เปิดแอปค้างไว้ โหลดข้อมูลทั้งชุด (~2.7 MB ก่อนบีบอัด) ทุก 15 นาที + ทุกครั้งที่มีใบยืมใหม่
+// แม้ไม่มีใครดูหน้าจอ (ย่อหน้าต่าง/อยู่แท็บอื่น) · ใหม่: ถ้าหน้าถูกซ่อน (document.hidden) ข้ามการโหลด
+// แล้วโหลดทันที 1 ครั้งเมื่อกลับมาดู — การเช็คใบใหม่ทุก 30 วิ + เสียงเตือน + เตือนใบค้าง ยังทำงานเหมือนเดิม
+var _arPending=false;
+function _arTick(){
+  if(document.hidden){_arPending=true;return;}   // ไม่ตั้งรอบถัดไป — loadAll() ตอนกลับมาจะตั้งรอบใหม่เอง
+  loadAll();
+}
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden&&_arPending){_arPending=false;if(typeof loadAll==='function')loadAll();}
+});
 async function loadAll(){
   var rb=document.getElementById('recBody');if(rb)rb.innerHTML='<tr><td colspan="5"><div class="lding"><div class="spin"></div> กำลังโหลด...</div></td></tr>';
   var dc=document.getElementById('dailyCont');if(dc)dc.innerHTML='<div class="lding"><div class="spin"></div> กำลังโหลด...</div>';
@@ -6271,7 +6310,7 @@ async function loadAll(){
 // ─────────────────────────────────────────────────────────── §TAB-REC
 // แท็บ "รายการยืม-คืน" (rec)
 // ───────────────────────────────────────────────────────────
-    arTimer=setTimeout(loadAll,15*60*1000); // auto-refresh ทุก 15 นาที
+    arTimer=setTimeout(_arTick,15*60*1000); // auto-refresh ทุก 15 นาที (ข้ามขณะหน้าถูกซ่อน — ดู _arTick)
   }catch(e){console.error(e);toast('โหลดข้อมูลล้มเหลว: '+e.message,'error');if(rb)rb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--er);padding:24px">❌ โหลดข้อมูลล้มเหลว</td></tr>';}
 }
 
@@ -6311,6 +6350,23 @@ var _recPage=1;
 var _recPageSize=20;
 var _recGroupsFiltered=[];
 
+// ── วันคืน "ตัวเครื่อง" — มาตรฐานเดียวทั้งแอป (29 ก.ย. 2569) ──
+// ระบบเก็บวันคืน 2 ช่อง: machine_return_date (บันทึกครั้งเดียวตอนคืนตัวเครื่อง) กับ
+// return_date (ถูกเขียนทับทุกครั้งที่คืน รวมคืนอุปกรณ์ค้างทีหลัง) — เดิมบางหน้าใช้ return_date
+// ทำให้เครื่องที่อุปกรณ์คืนทีหลังถูกนับว่า "คืนวันที่อุปกรณ์คืน" · ตอนนี้ใช้เกณฑ์เดียวกับ
+// daysOf()/หน้ารายละเอียดที่ใช้อยู่แล้ว: ตัวเครื่องคืนแล้ว (MachineReturned หรือสถานะคืน) →
+// MachineReturnDate สำรองด้วย ReturnDate (ข้อมูลเก่าก่อนมี machine_return_date) · ยังไม่คืน → ''
+function _machineReturned(item){return !!(item&&item.borrow&&(item.borrow.MachineReturned===true||item.status==='RETURNED'));}
+function _machineRetDate(item){return _machineReturned(item)?S(item.borrow.MachineReturnDate||item.borrow.ReturnDate):'';}
+// เวลาคืน (เวลาไทย HH:MM) จาก returned_at — เฉพาะเมื่อวันตรงกับวันคืนตัวเครื่อง (ข้อมูลเก่าไม่มีเวลา → '')
+function _retTimeOf(item,d){
+  var ts=item&&item.borrow?item.borrow.ReturnedAt:'';if(!ts||!d)return '';
+  var t=new Date(ts);if(isNaN(t.getTime()))return '';
+  t=new Date(t.getTime()+7*3600*1000);   // ประเทศไทยไม่มี DST
+  var p=function(n){return String(n).padStart(2,'0');};
+  if(t.getUTCFullYear()+'-'+p(t.getUTCMonth()+1)+'-'+p(t.getUTCDate())!==String(d).slice(0,10))return '';
+  return p(t.getUTCHours())+':'+p(t.getUTCMinutes());
+}
 function _getRecGroups(){
   var search=document.getElementById('recSearch').value.toLowerCase();
   var sf=document.getElementById('recStat').value;
@@ -6337,9 +6393,8 @@ function _getRecGroups(){
     // sf='RETURNED'/'ACC_PENDING' (เลือกเฉพาะสถานะคืน) → ใช้ return_date ทุกแถว
     // sf อื่นๆ (รวม '' = ทั้งหมด, TRANSFERRED, ฯลฯ) → ใช้ loan_date ทุกแถว
     var isRet=sf==='RETURNED'||sf==='ACC_PENDING';
-    var dateVal=isRet&&item.borrow&&item.borrow.ReturnDate
-      ? item.borrow.ReturnDate
-      : item.loan.LoanDate;
+    var _mrd=isRet?_machineRetDate(item):'';   // วันคืนตัวเครื่อง (ไม่ใช่วันคืนอุปกรณ์ทีหลัง)
+    var dateVal=_mrd||item.loan.LoanDate;
 
     if(ds&&dateVal&&dateVal<ds)return false;
     if(de&&dateVal&&dateVal>de)return false;
@@ -6356,7 +6411,14 @@ function _getRecGroups(){
   groups.forEach(function(g){
     g._sortKey=Math.min.apply(null,g.items.map(function(i){return STATUS_ORDER[i.status]!==undefined?STATUS_ORDER[i.status]:5;}));
   });
-  groups.sort(function(a,b){if(a._sortKey!==b._sortKey)return a._sortKey-b._sortKey;return(b.loan.LoanDate||'').localeCompare(a.loan.LoanDate||'');});
+  // กรองสถานะคืน → เรียงตามวันคืนตัวเครื่องล่าสุดก่อน (วัน+เวลา) — ใบหลายเครื่องใช้เครื่องที่คืนล่าสุด
+  var _retSort=sf==='RETURNED'||sf==='ACC_PENDING';
+  groups.forEach(function(g){
+    g._retKey='';
+    if(!_retSort)return;
+    g.items.forEach(function(i){var d=_machineRetDate(i);if(!d)return;var k=d.slice(0,10)+' '+_retTimeOf(i,d);if(k>g._retKey)g._retKey=k;});
+  });
+  groups.sort(function(a,b){if(a._sortKey!==b._sortKey)return a._sortKey-b._sortKey;if(_retSort&&a._retKey!==b._retKey)return a._retKey<b._retKey?1:-1;return(b.loan.LoanDate||'').localeCompare(a.loan.LoanDate||'');});
   groups=_exactMatchFirst(groups,search,function(g){
     var f=[S(g.loan.LoanID),S(g.loan.BorrowerName),S(g.loan.DeptName),S(g.loan.PatientName)];
     g.items.forEach(function(i){f.push(S(i.eq.name));if(i.borrow)f.push(S(i.borrow.EquipmentNo));});
@@ -6414,7 +6476,7 @@ function renderRec(){
     var cancelBtn='';
     if(loan.Status!=='CANCELLED'&&loan.Status!=='RETURNED'&&hasPending&&!hasActive)cancelBtn='<button class="abt" style="color:var(--er);border-color:var(--er);font-size:11px" data-act="cancelAll" data-lid="'+S(loan.LoanID)+'">✕ ยกเลิก</button>';
     if(loan.Status==='CANCELLED')cancelBtn='<button class="abt" style="color:var(--er);border-color:var(--er);font-size:11px" data-act="deleteAll" data-lid="'+S(loan.LoanID)+'">🗑 ลบ</button>';
-    var hdr='<tr class="loan-hdr"><td style="font-family:var(--mo);color:var(--mu);font-size:10px;font-weight:700">'+rowN+'</td><td colspan="3" style="padding:8px 10px"><div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><span style="font-family:var(--mo);font-size:11px;color:var(--ac)">'+S(loan.LoanID)+'</span><span>📅 '+loan.LoanDate+'</span><span>ผู้ยืม: <strong>'+ES(loan.BorrowerName)+'</strong></span><span>แผนก: <strong>'+ES(loan.DeptName)+'</strong></span><span>ผู้ป่วย: '+ES(loan.PatientName)+'</span>'+badge(grpStat)+'<span style="font-size:10px;color:var(--mu)">'+g.items.length+' รายการ</span></div></td><td style="text-align:right;white-space:nowrap">'+cancelBtn+'</td></tr>';
+    var hdr='<tr class="loan-hdr"><td style="font-family:var(--mo);color:var(--mu);font-size:10px;font-weight:700">'+rowN+'</td><td colspan="3" style="padding:8px 10px"><div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><span style="font-family:var(--mo);font-size:11px;color:var(--ac)">'+S(loan.LoanID)+'</span><span>📅 '+loan.LoanDate+'</span>'+(g._retKey?'<span style="color:var(--ok)" title="วันที่คืนตัวเครื่อง">↩ คืน '+esc(g._retKey.trim())+'</span>':'')+'<span>ผู้ยืม: <strong>'+ES(loan.BorrowerName)+'</strong></span><span>แผนก: <strong>'+ES(loan.DeptName)+'</strong></span><span>ผู้ป่วย: '+ES(loan.PatientName)+'</span>'+badge(grpStat)+'<span style="font-size:10px;color:var(--mu)">'+g.items.length+' รายการ</span></div></td><td style="text-align:right;white-space:nowrap">'+cancelBtn+'</td></tr>';
     var subRows=sortItems(g.items).map(function(item){var key=S(item.loan.LoanID)+'__'+item.idx;_rMap[key]=item;var eqNo=item.borrow?(ES(item.borrow.EquipmentNo)||'—'):'—';var trailHtml=item.borrow&&item.borrow.TransferHistory&&item.borrow.TransferHistory.length?buildTransferTrail(item.loan,item.borrow):'';var btns='<button class="abt" data-act="view" data-key="'+key+'">👁</button>';if(item.status==='PENDING')btns+=' <button class="abt" style="border-color:var(--ac);color:var(--ac)" data-act="borrow" data-key="'+key+'">📝 บันทึก</button>';if(item.status==='ACTIVE')btns+=' <button class="abt" style="border-color:var(--ok);color:var(--ok)" data-act="return" data-key="'+key+'">↩ คืน</button>';if(item.status==='ACTIVE')btns+=' <button class="abt" style="border-color:var(--wn);color:var(--wn)" data-act="transfer" data-key="'+key+'">🔄 โอน</button>';if(item.status==='ACC_PENDING')btns+=' <button class="abt" style="border-color:#f59e0b;color:#f59e0b" data-act="retacc" data-key="'+key+'">📦 คืนอุปกรณ์</button>';if(item.status==='CANCELLED')btns+=' <button class="abt" style="border-color:var(--er);color:var(--er)" data-act="delete" data-key="'+key+'">🗑 ลบ</button>';return'<tr class="item-row"><td style="text-align:center;font-family:var(--mo);color:var(--mu);font-size:10px">└ '+item.idx+'</td><td><span style="background:var(--s2);border-radius:3px;padding:1px 6px;font-family:var(--mo);font-size:10px;color:var(--ac2)">item '+item.idx+'</span> <strong>'+ES(item.eq.name)+'</strong>'+standbyBadge(item.eq)+(item.eq.detail?'  <span style="font-size:11px;color:var(--mu)">'+esc(item.eq.detail)+'</span>':'')+trailHtml+'</td><td style="font-family:var(--mo);font-size:13px;color:var(--ac)">'+eqNo+'</td><td>'+badge(item.status)+(item.borrow&&item.borrow.TransferHistory&&item.borrow.TransferHistory.length?'<span class="badge btr" style="margin-left:3px;font-size:9px">🔄 โอน '+item.borrow.TransferHistory.length+'x</span>':'')+'</td><td><div style="display:flex;gap:3px;flex-wrap:nowrap">'+btns+'</div></td></tr>';}).join('');
     return hdr+subRows;
   }).join('');
@@ -7107,7 +7169,7 @@ function renderAll(){
     pe.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;padding:8px 4px;margin-top:6px">'+info+exportInfo+'<div style="display:flex;gap:4px;align-items:center">'+btns+'</div></div>';
   }
   var html=pageItems.map(function(item){
-    var ld=item.loan.LoanDate,startD=ld?new Date(ld):null,endD=item.borrow&&item.borrow.ReturnDate?new Date(item.borrow.ReturnDate):now;
+    var ld=item.loan.LoanDate,startD=ld?new Date(ld):null,_mrd=_machineRetDate(item),endD=_mrd?new Date(_mrd):now;
     var days=startD&&(item.status==='ACTIVE'||item.status==='RETURNED'||item.status==='ACC_PENDING')?Math.max(0,Math.round((endD-startD)/86400000)):'-';
     var ak=S(item.loan.LoanID)+'__'+item.idx+'_a';_aMap[ak]=item;
     var accs=item.borrow&&Array.isArray(item.borrow.Accessories)?item.borrow.Accessories:[];
@@ -7443,8 +7505,8 @@ async function renderSum(r){
   var expRet=exp.filter(function(item){
     if(item.status!=='RETURNED'&&item.status!=='ACC_PENDING')return false;
     if(secDayEq&&S(item.eq.name)!==secDayEq)return false;
-    if(!item.borrow||!item.borrow.ReturnDate)return false;
-    var rd=item.borrow.ReturnDate;
+    var rd=_machineRetDate(item);   // วันคืนตัวเครื่อง
+    if(!rd)return false;
     if(_dayDateS&&rd<_dayDateS)return false;
     if(_dayDateE&&rd>_dayDateE)return false;
     return true;
@@ -7469,7 +7531,7 @@ async function renderSum(r){
 
   // นับ "คืน" — ใช้ return_date จาก expRet (กรองด้วย return_date แล้ว)
   expRet.forEach(function(item){
-    var rd=item.borrow.ReturnDate;
+    var rd=_machineRetDate(item);
     if(!dayMap[rd])dayMap[rd]={borrow:{},ret:{},accPend:{},pending:{}};
     var n=S(item.eq.name);allEqNames2[n]=true;
     dayMap[rd].ret[n]=(dayMap[rd].ret[n]||0)+1;
@@ -7680,11 +7742,11 @@ async function renderSum(r){
       var loanD=item.loan.LoanDate;
       var todayLocal=localDateStr(now);
       var retD;
-      if(item.status==='ACTIVE'||item.status==='ACC_PENDING'){
+      if(item.status==='ACTIVE'){
         retD=todayLocal;
-      } else if(item.status==='RETURNED'){
-        if(!item.borrow||!item.borrow.ReturnDate)return;
-        retD=item.borrow.ReturnDate;
+      } else if(item.status==='RETURNED'||item.status==='ACC_PENDING'){
+        retD=_machineRetDate(item);   // ตัวเครื่องคืนแล้ว = เลิกนับใช้งาน (อุปกรณ์ค้างไม่นับเป็นเครื่องใช้งาน)
+        if(!retD)return;
       } else { return; }
       rangeDates.forEach(function(d){
         if(d>=loanD&&d<=retD){
@@ -8359,7 +8421,7 @@ async function renderSum(r){
       if(!eqNo||eqNo==='—'||eqNo==='-'||eqNo==='')return;
       var ld=item.loan.LoanDate;if(!ld)return;
       var startD=new Date(ld);
-      var endD=item.borrow.ReturnDate?new Date(item.borrow.ReturnDate):now;
+      var _mrd=_machineRetDate(item),endD=_mrd?new Date(_mrd):now;
       var days=Math.max(1,Math.round((endD-startD)/86400000));
       var eqName=S(item.eq.name);
       // key รวม "หมายเลขเครื่อง + ชนิดเครื่องมือ" กันเลขซ้ำข้ามชนิด (เช่น HFNC เลข 20 กับ Infusion pump เลข 20 คือคนละเครื่อง)
@@ -9833,6 +9895,14 @@ function viewDet(loanID){
   var _hasPend=_effStatuses.indexOf('PENDING')>=0,_hasAct=_effStatuses.indexOf('ACTIVE')>=0,_hasAccP=_effStatuses.indexOf('ACC_PENDING')>=0;
   var _allRet=_effStatuses.length>0&&_effStatuses.every(function(s){return s==='RETURNED'||s==='ACC_PENDING';});
   var _effStatus=loan.Status==='CANCELLED'?'CANCELLED':_hasPend?'PENDING':_hasAct?'ACTIVE':_hasAccP?'ACC_PENDING':_allRet?'RETURNED':S(loan.Status);
+  // จำนวนวัน (เน้นตัวเครื่อง): ตัวเครื่องคืนครบทุกเครื่องแล้ว (RETURNED/ACC_PENDING — อุปกรณ์ค้างไม่นับ)
+  // → นับถึงวันคืนตัวเครื่องล่าสุด (MachineReturnDate สำรองด้วย ReturnDate — เกณฑ์เดียวกับ daysOf/_machineRetDate)
+  // · ยังมีเครื่องรอบันทึก/ยืมอยู่ → นับถึงวันนี้เหมือนเดิม
+  if(_allRet){
+    var _endMr='';
+    (loan.EquipmentList||[]).forEach(function(e,idx){var b=bs.find(function(b){return N(b.EquipItemIndex)===idx;});var d=b?S(b.MachineReturnDate||b.ReturnDate):'';if(d>_endMr)_endMr=d;});
+    if(_endMr&&ld)days=Math.max(0,Math.round((new Date(_endMr)-new Date(ld))/86400000));
+  }
   var html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px"><div><span style="color:var(--mu);font-size:10px">LOAN ID</span><br><span style="font-family:var(--mo);color:var(--ac)">'+lid+'</span></div><div><span style="color:var(--mu);font-size:10px">สถานะ</span><br>'+badge(_effStatus)+'</div><div><span style="color:var(--mu);font-size:10px">วันที่ยืม</span><br>'+ld+'</div><div><span style="color:var(--mu);font-size:10px">จำนวนวัน</span><br><span style="font-family:var(--mo)">'+days+' วัน</span></div><div><span style="color:var(--mu);font-size:10px">ผู้ยืม</span><br>'+ES(loan.BorrowerName)+'</div><div><span style="color:var(--mu);font-size:10px">แผนก</span><br>'+ES(loan.DeptName)+'</div><div style="grid-column:1/-1"><span style="color:var(--mu);font-size:10px">ผู้ป่วย</span><br>'+ES(loan.PatientName)+'</div></div><div style="background:var(--s2);border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">รายการเครื่องมือ ('+((loan.EquipmentList||[]).length)+' รายการ)</div>'+(loan.EquipmentList||[]).map(function(e,idx){var b=bs.find(function(b){return N(b.EquipItemIndex)===idx;});var itemStatus=computeStatus(b);var accHtml='';if(b&&b.Accessories&&b.Accessories.length){accHtml='<div style="margin-top:6px;padding:6px;background:var(--bg);border-radius:5px;font-size:12px">'+b.Accessories.map(function(a){var isRet=b.ReturnedAccs&&b.ReturnedAccs.some(function(r){return r.id===a.id;});var retAcc=isRet&&b.ReturnedAccs?b.ReturnedAccs.find(function(r){return r.id===a.id;}):null;var retAccDate=retAcc&&retAcc.date?retAcc.date:(isRet&&b.ReturnDate?b.ReturnDate:'');var retAccRcv=retAcc&&retAcc.receiver?retAcc.receiver:'';return'<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bd)"><span>'+esc(a.name||'?')+(a.no?' No.'+esc(a.no):'')+'</span>'+(isRet?'<span style="color:var(--ok);font-size:11px">✓ คืนแล้ว'+(retAccDate?' <span style="color:var(--mu);font-size:10px">('+retAccDate+')</span>':'')+(retAccRcv?' <span style="color:var(--mu);font-size:10px">ผู้รับ: '+esc(retAccRcv)+'</span>':'')+'</span>':'<span style="color:var(--er);font-size:11px">⏳ ยังไม่คืน</span>')+'</div>';}).join('')+'</div>';}var thHtml='';if(b&&b.TransferHistory&&b.TransferHistory.length){var _th=b.TransferHistory;var _origin;if(_th[0]&&S(_th[0].fromDept)){_origin=esc(S(_th[0].fromDept));}else if(_th[0]&&_th[0].note){var _nm=S(_th[0].note).match(/โอนจาก\s*(.+)/);_origin=_nm&&_nm[1].trim()?esc(_nm[1].trim()):ES(loan.DeptName);}else{_origin=ES(loan.DeptName);}var _bc=[_origin].concat(_th.map(function(t){return ES(t.toDept);}));var _bcHtml=_bc.map(function(d,i){var isCur=i===_bc.length-1;if(isCur)return'<span style="background:rgba(0,200,255,.12);border:1px solid rgba(0,200,255,.4);border-radius:4px;padding:1px 8px;color:var(--ac);font-weight:700;font-size:11px">'+d+' <span style="font-size:9px;opacity:.8">ปัจจุบัน</span></span>';return'<span style="background:var(--s2);border:1px solid var(--bd);border-radius:4px;padding:1px 8px;color:var(--mu);font-size:11px">'+d+'</span> <span style="color:var(--mu);font-size:10px">›</span> ';}).join('');var _steps=[{dept:_origin,date:S(loan.LoanDate),who:ES(loan.BorrowerName),isOrigin:true}];_th.forEach(function(t){_steps.push({dept:ES(t.toDept),date:S(t.date),who:ES(t.transfererName||''),isOrigin:false});});var _timelineHtml=_steps.map(function(step,si){var isLast=si===_steps.length-1;var dotStyle=isLast?'width:10px;height:10px;border-radius:50%;background:var(--ac);flex-shrink:0;margin-top:3px':'width:10px;height:10px;border-radius:50%;background:var(--s2);border:1.5px solid var(--bd);flex-shrink:0;margin-top:3px';var lineHtml=!isLast?'<div style="width:1px;flex:1;background:var(--bd);min-height:20px;margin:2px 0"></div>':'';var labelHtml=step.isOrigin?step.dept+' <span style="color:var(--mu);font-weight:400">(ต้นทาง)</span>':'โอน → '+step.dept+(isLast?' <span style="background:rgba(0,200,255,.15);color:var(--ac);font-size:10px;padding:0 6px;border-radius:99px;margin-left:4px">ปัจจุบัน</span>':'');return'<div style="display:flex;gap:10px;align-items:flex-start"><div style="display:flex;flex-direction:column;align-items:center;width:18px"><div style="'+dotStyle+'"></div>'+lineHtml+'</div><div style="padding-bottom:12px"><div style="font-size:12px;font-weight:700;color:var(--tx)">'+labelHtml+'</div><div style="font-size:11px;color:var(--mu);margin-top:2px">'+S(step.date)+(step.who?' · '+step.who:'')+'</div></div></div>';}).join('');thHtml='<div style="margin-top:8px;padding:10px 12px;background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.12);border-radius:7px"><div style="font-size:10px;color:var(--ac);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">เส้นทางการโอน</div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd)"><span style="font-size:11px;color:var(--mu)">เส้นทาง</span> '+_bcHtml+'</div>'+_timelineHtml+'</div>';}return'<div style="padding:5px 0;border-bottom:1px solid var(--bd)"><div style="display:flex;justify-content:space-between;align-items:center"><span><strong>#'+idx+'</strong> '+ES(e.name)+(e.detail?' — '+esc(e.detail):'')+'</span><div>'+badge(itemStatus)+' <span style="font-family:var(--mo)">×'+e.qty+'</span></div></div>'+(b?'<div style="font-size:11px;color:var(--mu);padding-top:2px;padding-left:11px">เลขเครื่อง: <span style="color:var(--ac);font-family:var(--mo)">'+(esc(S(b.EquipmentNo))||'—')+'</span> | ผู้ให้ยืม: '+ES(b.GiverName||'-')+(S(b.ReceiverName)?' | ผู้รับคืนเครื่อง: '+ES(b.ReceiverName):'')+(b.MachineReturnDate?' | <span style="color:var(--ok)">📅 คืนเครื่อง: '+S(b.MachineReturnDate)+'</span>':b.ReturnDate&&b.MachineReturned?' | <span style="color:var(--ok)">📅 คืนเครื่อง: '+S(b.ReturnDate)+'</span>':'')+'</div>':'')+accHtml+thHtml+'</div>';}).join('')+'</div>';
   document.getElementById('detBody').innerHTML=html;openM('mDetail');
 }
@@ -11307,8 +11377,8 @@ async function checkNewLoanAlert(){
         }catch(e){}
       },600);
     }
-    if(window.toast)toast('มีใบยืมใหม่เข้ามา — รีเฟรชข้อมูลแล้ว','success');
-    loadAll();
+    if(document.hidden){_arPending=true;}   // หน้าถูกซ่อน: เตือนเสียงแล้ว แต่ยังไม่โหลดข้อมูลทั้งชุด — โหลดตอนกลับมาดู
+    else{if(window.toast)toast('มีใบยืมใหม่เข้ามา — รีเฟรชข้อมูลแล้ว','success');loadAll();}
   }catch(e){console.warn('checkNewLoanAlert error:',e.message);}
 }
 async function checkStaleLoanAlert(){
@@ -11582,7 +11652,7 @@ function getPageData(page){
       return[S(item.loan.LoanID),S(item.loan.BorrowerName),S(item.loan.DeptName),S(item.loan.PatientName),S(item.eq.name),item.borrow?S(item.borrow.EquipmentNo):''];
     });
     rows.push(['LoanID','วันที่ยืม','ผู้ยืม','แผนก','ผู้ป่วย','เครื่องมือ','หมายเลขเครื่อง','อุปกรณ์ประกอบ','วันที่ใช้','สถานะ','ผู้ให้ยืม','ผู้รับคืน','วันที่คืน','เหตุผลคืน','ประวัติโอน']);
-    items.forEach(function(item){var ld=item.loan.LoanDate,startD=ld?new Date(ld):null,endD=item.borrow&&item.borrow.ReturnDate?new Date(item.borrow.ReturnDate):now;var days=startD&&(item.status==='ACTIVE'||item.status==='RETURNED'||item.status==='ACC_PENDING')?Math.max(0,Math.round((endD-startD)/86400000)):'-';var accs=item.borrow&&Array.isArray(item.borrow.Accessories)?item.borrow.Accessories:[];var th=item.borrow&&Array.isArray(item.borrow.TransferHistory)?item.borrow.TransferHistory:[];rows.push([S(item.loan.LoanID),ld||'',S(item.loan.BorrowerName),S(item.loan.DeptName),S(item.loan.PatientName),S(item.eq.name),item.borrow?S(item.borrow.EquipmentNo||''):'-',accs.length||0,days,({PENDING:'รอดำเนินการจ่าย',ACTIVE:'ยืม',RETURNED:'คืน',ACC_PENDING:'คืน (อุปกรณ์ค้าง)',CANCELLED:'ยกเลิก'}[item.status]||item.status),item.borrow?S(item.borrow.GiverName||''):'-',item.borrow?S(item.borrow.ReceiverName||''):'-',item.borrow?S(item.borrow.ReturnDate||''):'-',item.borrow?S(item.borrow.ReturnRemark||''):'-',th.map(function(t){return t.date+':'+S(t.toDept);}).join('→')]);});
+    items.forEach(function(item){var ld=item.loan.LoanDate,startD=ld?new Date(ld):null,_mrd=_machineRetDate(item),endD=_mrd?new Date(_mrd):now;var days=startD&&(item.status==='ACTIVE'||item.status==='RETURNED'||item.status==='ACC_PENDING')?Math.max(0,Math.round((endD-startD)/86400000)):'-';var accs=item.borrow&&Array.isArray(item.borrow.Accessories)?item.borrow.Accessories:[];var th=item.borrow&&Array.isArray(item.borrow.TransferHistory)?item.borrow.TransferHistory:[];rows.push([S(item.loan.LoanID),ld||'',S(item.loan.BorrowerName),S(item.loan.DeptName),S(item.loan.PatientName),S(item.eq.name),item.borrow?S(item.borrow.EquipmentNo||''):'-',accs.length||0,days,({PENDING:'รอดำเนินการจ่าย',ACTIVE:'ยืม',RETURNED:'คืน',ACC_PENDING:'คืน (อุปกรณ์ค้าง)',CANCELLED:'ยกเลิก'}[item.status]||item.status),item.borrow?S(item.borrow.GiverName||''):'-',item.borrow?S(item.borrow.ReceiverName||''):'-',item.borrow?(_machineRetDate(item)||S(item.borrow.ReturnDate||'')):'-',item.borrow?S(item.borrow.ReturnRemark||''):'-',th.map(function(t){return t.date+':'+S(t.toDept);}).join('→')]);});
   }else if(page==='daily'){var filter=document.getElementById('dailyFilter').value;var activeItems=exp.filter(function(i){return i.status==='ACTIVE'&&(!filter||S(i.eq.name)===filter);});rows.push(['หมายเลขเครื่อง','ชนิดเครื่องมือ','วันที่ยืม','แผนก','ผู้ป่วย','วันที่ใช้','ผู้ให้ยืม','ประวัติโอน','อุปกรณ์ประกอบ']);activeItems.forEach(function(item){var ld=item.loan.LoanDate||'-',days=ld!=='-'?Math.max(0,Math.round((now-new Date(ld))/86400000)):'-';var th=item.borrow&&item.borrow.TransferHistory?item.borrow.TransferHistory:[];rows.push([item.borrow?S(item.borrow.EquipmentNo||'—'):'—',S(item.eq.name),ld,S(item.loan.DeptName),S(item.loan.PatientName),days,item.borrow?S(item.borrow.GiverName||'-'):'-',th.map(function(t){return S(t.toDept)+'('+t.date+')';}).join('→'),(item.borrow&&item.borrow.Accessories?item.borrow.Accessories.length:0)]);});}
   else if(page==='sum'){
     rows.push(['ชนิดเครื่องมือ','กำลังยืม (ACTIVE)','คืนแล้ว','รอดำเนินการ','ค้างอุปกรณ์','รวมทั้งหมด']);
@@ -13322,7 +13392,7 @@ function _invNaturalCompare(a,b){
 }
 
 window.loadEquipmentUnits=async function(){
-  var rows=await SB.get('equipment_units','order=equipment_type.asc,id.asc&limit=5000');
+  var rows=await SB.getChecked('equipment_units','order=equipment_type.asc,id.asc&limit=5000','ทะเบียนเครื่องมือรายตัว (equipment_units)');
   var grp={},byId={};
   rows.forEach(function(r){
     if(!grp[r.equipment_type])grp[r.equipment_type]=[];
@@ -14849,7 +14919,7 @@ window.showAdminTab=function(id,el){
 var _origCAP=window.checkAdminPin;
 window.checkAdminPin=function(){
   if(_origCAP)_origCAP.apply(this,arguments);
-  setTimeout(function(){var ac=document.getElementById('adminContent');if(ac&&ac.style.display!=='none'){_injectInvAdminTab();_injectErrorLogTab();_injectSbStatusAdminTab();}},400);
+  setTimeout(function(){var ac=document.getElementById('adminContent');if(ac&&ac.style.display!=='none'){_injectInvAdminTab();_injectErrorLogTab();_injectSbStatusAdminTab();if(typeof _injectStaffWorkTab==='function')_injectStaffWorkTab();}},400);
 };
 new MutationObserver(function(){
   var ac=document.getElementById('adminContent');
@@ -14857,6 +14927,7 @@ new MutationObserver(function(){
     if(!document.getElementById('atab-inv'))_injectInvAdminTab();
     if(!document.getElementById('atab-errlog'))_injectErrorLogTab();
     if(!document.getElementById('atab-sbstatus'))_injectSbStatusAdminTab();
+    if(!document.getElementById('atab-staffwork')&&typeof _injectStaffWorkTab==='function')_injectStaffWorkTab();
   }
 }).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style']});
 
@@ -15073,6 +15144,371 @@ window.showAdminTab=function(id,el){
     _sbUIRenderHistory();
   } else {if(_origSAT3)_origSAT3.apply(this,arguments);}
 };
+
+// ════════════════════════════════════════════ §STAFF-WORKLOAD (เพิ่มใหม่ 28 ก.ย. 2569)
+// แท็บ "👥 ภาระงานเจ้าหน้าที่" ใน Admin — นับงาน ยืม / คืน / โอน ต่อเจ้าหน้าที่
+// จากข้อมูลที่มีอยู่แล้วเท่านั้น (ไม่สร้างตาราง/คอลัมน์ใหม่ ไม่เขียนข้อมูลใดๆ):
+//   ยืม = borrow_records.giver_name  เวลา = created_at (เวลาที่กดบันทึกจ่ายจริง)
+//   คืน = borrow_records.receiver_name  วันที่ = machine_return_date (วันที่คืนตัวเครื่อง,
+//         ไม่ถูกเขียนทับตอนคืนอุปกรณ์ทีหลัง) สำรองด้วย return_date · เวลา = returned_at
+//         เฉพาะเมื่อวันที่ตรงกับวันที่คืน (ข้อมูลเก่าก่อนมี returned_at = ไม่มีเวลา)
+//         ข้อจำกัดที่ทราบ: receiver_name ถูกเขียนทับเมื่อคืนอุปกรณ์ค้างทีหลัง (ชื่อเดียวกับ
+//         ที่หน้าอื่นของแอปแสดงเป็น "ผู้รับคืน" — ตั้งใจใช้ชื่อเดียวกันให้ตรงกันทั้งแอป)
+//   โอน = transfer_history[].transfererName  วันที่ = date (ไม่มีเวลา)
+// ข้อมูลที่ใช้: loans/borrows ที่ loadAll() โหลดไว้แล้ว (ย้อนหลัง ~1 ปี ไม่ดึงซ้ำ)
+// ดึงเพิ่มเฉพาะเมื่อช่วงวันที่เก่ากว่าที่โหลดไว้ หรือพบรายการที่ไม่มีใบยืมคู่กัน —
+// เก็บในตัวแปรแยก _swlFull (ห้ามทับ loans/borrows ของหน้าอื่น ตามบทเรียนใน CHANGELOG)
+var _swlFull=null;          // {loans,borrows} ประวัติเต็ม + archive (ดึงเมื่อจำเป็น ครั้งเดียวต่อการเปิดแอป)
+var _swlFullLoading=null;   // promise ระหว่างดึง กันยิงซ้ำ
+var _swlLast=null;          // ผลคำนวณล่าสุด (ใช้กับรายละเอียด/Excel/พิมพ์)
+var _swlDetailStaff=null;   // ชื่อที่เปิดดูรายละเอียดอยู่
+var _swlExpanded={};        // {ชื่อ:1} คนที่กาง ▾ ดูแยกตามชนิดเครื่องมืออยู่
+var _SWL_TYPES=[{k:'give',n:'ยืม',c:'#3b82f6'},{k:'ret',n:'คืน',c:'#10b981'},{k:'tr',n:'โอน',c:'#f59e0b'}];
+var _SWL_NONAME='ไม่ระบุ';
+
+// วันที่/เวลาไทยจาก timestamp — ประเทศไทยไม่มี DST จึง +7 ชั่วโมงคงที่ได้แน่นอน
+function _swlBkk(ts){
+  if(!ts)return null;
+  var d=new Date(ts);if(isNaN(d.getTime()))return null;
+  var t=new Date(d.getTime()+7*3600*1000);
+  var p=function(n){return String(n).padStart(2,'0');};
+  return{date:t.getUTCFullYear()+'-'+p(t.getUTCMonth()+1)+'-'+p(t.getUTCDate()),time:p(t.getUTCHours())+':'+p(t.getUTCMinutes())};
+}
+function _swlName(v){var s=String(v===null||v===undefined?'':v).trim().replace(/\s+/g,' ');return s||_SWL_NONAME;}
+function _swlD10(v){var s=String(v||'').trim();return /^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';}
+function _swlToday(){return localDateStr(new Date());}
+function _swlAddDays(iso,n){var d=new Date(iso+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);}
+
+// แปลงใบยืม+บันทึกยืม → รายการงาน (1 งาน = 1 แถว)
+function _swlBuildEvents(ls,bs){
+  var lm={};(ls||[]).forEach(function(l){lm[S(l.LoanID)]=l;});
+  var ev=[],noLoan=0;
+  (bs||[]).forEach(function(b){
+    var loan=lm[S(b.LoanID)]||null;if(!loan)noLoan++;
+    var eqItem=loan&&Array.isArray(loan.EquipmentList)?loan.EquipmentList[N(b.EquipItemIndex)]:null;
+    var eq=eqItem?normEqName(eqItem.name):'(ไม่พบใบยืม)';
+    var th=Array.isArray(b.TransferHistory)?b.TransferHistory:[];
+    var curDept=loan?S(loan.DeptName):'';                         // loan.DeptName = แผนกปัจจุบัน (อัปเดตทุกครั้งที่โอน)
+    var firstDept=th.length&&S(th[0].fromDept)?S(th[0].fromDept):curDept;
+    var base={eq:eq,eqNo:S(b.EquipmentNo),loanId:S(b.LoanID),recId:S(b.RecordID),patient:loan?S(loan.PatientName):''};
+    var g=_swlBkk(b.CreatedAt);
+    ev.push(Object.assign({type:'give',staff:_swlName(b.GiverName),date:g?g.date:_swlD10(loan&&loan.LoanDate),time:g?g.time:'',dept:firstDept,dept2:''},base));
+    if(b.MachineReturned===true){
+      var rd=_swlD10(b.MachineReturnDate)||_swlD10(b.ReturnDate);
+      var ra=_swlBkk(b.ReturnedAt);
+      if(!rd&&ra)rd=ra.date;
+      ev.push(Object.assign({type:'ret',staff:_swlName(b.ReceiverName),date:rd,time:(ra&&ra.date===rd)?ra.time:'',dept:curDept,dept2:''},base));
+    }
+    th.forEach(function(t){
+      ev.push(Object.assign({type:'tr',staff:_swlName(t.transfererName),date:_swlD10(t.date),time:'',dept:S(t.toDept),dept2:S(t.fromDept)},base));
+    });
+  });
+  return{events:ev,noLoan:noLoan};
+}
+
+// วันแรกที่ข้อมูลใน loans/borrows ปกติ (loadAll) ครอบคลุมครบ — loadAll ดึงย้อนหลัง 1 ปี
+// ตาม loan_date/return_date จึงเผื่อ 7 วันกันขอบ
+function _swlCoveredFrom(){var c=new Date();c.setFullYear(c.getFullYear()-1);return _swlAddDays(localDateStr(c),7);}
+async function _swlEnsureFull(){
+  if(_swlFull)return _swlFull;
+  if(_swlFullLoading)return _swlFullLoading;
+  _swlFullLoading=(async function(){
+    var r=await Promise.all([API.getAllLoans(true),API.getAllBorrows(true),
+      API.getArchivedLoans().catch(function(){return[];}),API.getArchivedBorrows().catch(function(){return[];})]);
+    var lm={},bm={};
+    r[0].concat(r[2]).forEach(function(l){if(!lm[S(l.LoanID)])lm[S(l.LoanID)]=l;});
+    r[1].concat(r[3]).forEach(function(b){if(!bm[S(b.RecordID)])bm[S(b.RecordID)]=b;});
+    _swlFull={loans:Object.keys(lm).map(function(k){return lm[k];}),borrows:Object.keys(bm).map(function(k){return bm[k];})};
+    return _swlFull;
+  })();
+  try{return await _swlFullLoading;}finally{_swlFullLoading=null;}
+}
+
+function _swlBuildAdminHTML(){
+  var inp='padding:6px 8px;background:var(--bg);border:1px solid var(--bd);border-radius:5px;color:var(--tx);font-size:13px';
+  var qb='class="btn bg sm" style="padding:4px 10px;font-size:12px"';
+  return '<div class="card">'
+    +'<div class="ctitle">👥 ภาระงานเจ้าหน้าที่ <span style="font-size:11px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0">(นับจากข้อมูลยืม / คืน / โอน ที่มีอยู่แล้ว — ไม่ใช่คะแนน จำนวนครั้งไม่ได้บอกความหนักของงาน)</span></div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'
+      +'<button '+qb+' onclick="_swlQuick(\'today\')">วันนี้</button><button '+qb+' onclick="_swlQuick(\'7d\')">7 วัน</button>'
+      +'<button '+qb+' onclick="_swlQuick(\'month\')">เดือนนี้</button><button '+qb+' onclick="_swlQuick(\'prevmonth\')">เดือนก่อน</button>'
+      +'<button '+qb+' onclick="_swlQuick(\'fy\')">ปีงบประมาณ</button></div>'
+    +'<div id="swlTimeQuick" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center"><span style="font-size:11px;color:var(--mu)">⏱ ช่วงเวลา:</span>'
+      +_SWL_TIME_PRESETS.map(function(t){return '<button class="btn bg sm" data-swl-ts="'+t[0]+'" data-swl-te="'+t[1]+'" style="padding:4px 10px;font-size:12px" onclick="_swlTimeQuick(\''+t[0]+'\',\''+t[1]+'\')">'+t[2]+'</button>';}).join('')
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-bottom:10px">'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">วันที่ จาก</label><input type="date" id="swlDateS" style="'+inp+';width:100%" onchange="_swlRender()"></div>'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">วันที่ ถึง</label><input type="date" id="swlDateE" style="'+inp+';width:100%" onchange="_swlRender()"></div>'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">เวลา จาก</label><input type="time" id="swlTimeS" style="'+inp+';width:100%" onchange="_swlRender()"></div>'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">เวลา ถึง</label><input type="time" id="swlTimeE" style="'+inp+';width:100%" onchange="_swlRender()"></div>'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">เจ้าหน้าที่</label><select id="swlStaff" style="'+inp+';width:100%" onchange="_swlRender()"><option value="">ทั้งหมด</option></select></div>'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">ชนิดเครื่องมือ</label><select id="swlEq" style="'+inp+';width:100%" onchange="_swlRender()"><option value="">ทั้งหมด</option></select></div>'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">แผนก</label><select id="swlDept" style="'+inp+';width:100%" onchange="_swlRender()"><option value="">ทั้งหมด</option></select></div>'
+      +'<div><label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px">ชนิดงาน</label><div style="display:flex;gap:10px;align-items:center;height:32px;font-size:13px">'
+        +_SWL_TYPES.map(function(t){return '<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="swlT_'+t.k+'" checked onchange="_swlRender()">'+t.n+'</label>';}).join('')
+      +'</div></div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--mu);margin:-2px 0 8px">⏱ เวลา: เว้นว่างทั้งคู่ = ทั้งวัน · ข้ามเที่ยงคืนได้ เช่น 16:00–08:00 (นับ 16:00 ถึงก่อน 08:00) · งานที่ไม่มีข้อมูลเวลาจะแยกแจ้งไว้ ไม่นับรวม</div>'
+    +'<div id="swlMsg" style="font-size:12px;min-height:16px;margin-bottom:8px"></div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">'
+      +'<button class="btn bg sm" onclick="_swlReset()">↺ ล้างตัวกรอง</button>'
+      +'<button class="btn bg sm" onclick="_swlExcel()">📊 Excel</button>'
+      +'<button class="btn bg sm" onclick="_swlPrint()">🖨️ พิมพ์</button>'
+      +'<button class="btn bg sm" onclick="_swlExpandAll()">▾ กาง/พับ แยกชนิดเครื่องมือ ทุกคน</button></div>'
+    +'<div id="swlCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:12px"></div>'
+    +'<div id="swlTable" style="overflow-x:auto"></div>'
+    +'<div id="swlDetail" style="margin-top:14px"></div>'
+    +'</div>';
+}
+function _injectStaffWorkTab(){
+  var ac=document.getElementById('adminContent');if(!ac||document.getElementById('atab-staffwork'))return;
+  var tabs=ac.querySelector('.admin-tabs');
+  if(tabs){
+    var btn=document.createElement('button');
+    btn.className='atab';btn.id='atab-staffwork';
+    btn.setAttribute('onclick',"showAdminTab('staffwork-mgr',this)");
+    btn.innerHTML='👥 ภาระงานเจ้าหน้าที่';
+    tabs.appendChild(btn);
+  }
+  var panel=document.createElement('div');
+  panel.className='admin-sub';panel.id='adm-staffwork-mgr';
+  panel.style.display='none';
+  panel.innerHTML=_swlBuildAdminHTML();
+  ac.appendChild(panel);
+}
+var _origSAT4=window.showAdminTab;
+window.showAdminTab=function(id,el){
+  if(id==='staffwork-mgr'){
+    if(!document.getElementById('adm-staffwork-mgr'))_injectStaffWorkTab();
+    document.querySelectorAll('.admin-sub').forEach(function(s){s.classList.remove('on');s.style.display='none';});
+    document.querySelectorAll('.atab').forEach(function(t){t.classList.remove('on');});
+    var p=document.getElementById('adm-staffwork-mgr');
+    if(p){p.classList.add('on');p.style.display='';}
+    if(el)el.classList.add('on');
+    var ds=document.getElementById('swlDateS');
+    if(ds&&!ds.value)_swlQuick('month');else _swlRender();
+  } else {if(_origSAT4)_origSAT4.apply(this,arguments);}
+};
+
+function _swlQuick(k){
+  var today=_swlToday(),s=today,e=today;
+  var y=+today.slice(0,4),m=+today.slice(5,7);
+  var p=function(n){return String(n).padStart(2,'0');};
+  if(k==='7d')s=_swlAddDays(today,-6);
+  else if(k==='month')s=y+'-'+p(m)+'-01';
+  else if(k==='prevmonth'){var py=m===1?y-1:y,pm=m===1?12:m-1;s=py+'-'+p(pm)+'-01';e=_swlAddDays(y+'-'+p(m)+'-01',-1);}
+  else if(k==='fy')s=(m>=10?y:y-1)+'-10-01';   // ปีงบประมาณ 1 ต.ค. – 30 ก.ย.
+  var a=document.getElementById('swlDateS'),b=document.getElementById('swlDateE');
+  if(a)a.value=s;if(b)b.value=e;
+  _swlRender();
+}
+// ปุ่มลัดช่วงเวลา [เริ่ม, สิ้นสุด, ป้าย] — '' '' = ทั้งวัน · สิ้นสุดไม่รวม (16:00–08:00 = 16:00 ถึงก่อน 08:00)
+var _SWL_TIME_PRESETS=[['','','ทั้งวัน'],['08:00','16:00','08:00–16:00'],['16:00','08:00','16:00–08:00'],['08:00','20:00','08:00–20:00'],['20:00','08:00','20:00–08:00']];
+function _swlTimeQuick(s,e){
+  var a=document.getElementById('swlTimeS'),b=document.getElementById('swlTimeE');
+  if(a)a.value=s;if(b)b.value=e;
+  _swlRender();
+}
+function _swlReset(){
+  ['swlTimeS','swlTimeE','swlStaff','swlEq','swlDept'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
+  _SWL_TYPES.forEach(function(t){var c=document.getElementById('swlT_'+t.k);if(c)c.checked=true;});
+  _swlDetailStaff=null;_swlExpanded={};
+  _swlQuick('month');
+}
+function _swlFillSelect(id,vals){
+  var el=document.getElementById(id);if(!el)return;
+  var cur=el.value;
+  el.innerHTML='<option value="">ทั้งหมด</option>'+vals.map(function(v){return '<option value="'+esc(v)+'">'+esc(v)+'</option>';}).join('');
+  if(cur&&vals.indexOf(cur)<0)el.innerHTML+='<option value="'+esc(cur)+'">'+esc(cur)+'</option>';   // คงค่าที่เลือกไว้แม้ช่วงนี้ไม่มีข้อมูล
+  el.value=cur;
+}
+function _swlInTime(t,ts,te){if(ts<te)return t>=ts&&t<te;return t>=ts||t<te;}   // ts>te = ข้ามเที่ยงคืน (สิ้นสุดไม่รวม)
+
+var _swlRenderSeq=0;
+async function _swlRender(){
+  var msg=document.getElementById('swlMsg');if(!msg)return;
+  var seq=++_swlRenderSeq;
+  var ds=document.getElementById('swlDateS').value,de=document.getElementById('swlDateE').value;
+  var ts=document.getElementById('swlTimeS').value,te=document.getElementById('swlTimeE').value;
+  document.querySelectorAll('#swlTimeQuick [data-swl-ts]').forEach(function(b){b.className='btn '+((b.getAttribute('data-swl-ts')===ts&&b.getAttribute('data-swl-te')===te)?'bp':'bg')+' sm';});
+  var notes=[];
+  if(!ds||!de){msg.innerHTML='<span style="color:var(--wn)">เลือกช่วงวันที่ก่อน</span>';return;}
+  if(ds>de){msg.innerHTML='<span style="color:var(--er)">วันที่เริ่มต้องไม่เกินวันที่สิ้นสุด</span>';return;}
+  var useTime=false;
+  if(ts||te){
+    if(!ts||!te){msg.innerHTML='<span style="color:var(--er)">ระบุเวลาให้ครบทั้ง "จาก" และ "ถึง" (หรือเว้นว่างทั้งคู่ = ทั้งวัน)</span>';return;}
+    if(ts===te){msg.innerHTML='<span style="color:var(--er)">เวลาเริ่มและเวลาสิ้นสุดต้องไม่เท่ากัน</span>';return;}
+    useTime=true;
+  }
+  if(loans===null||borrows===null){msg.innerHTML='<span style="color:var(--mu)">⏳ กำลังโหลดข้อมูลยืม-คืน...</span>';return;}
+  var src={loans:loans,borrows:borrows},usedFull=!!_swlFull;
+  if(_swlFull)src=_swlFull;
+  var built=_swlBuildEvents(src.loans,src.borrows);
+  // ช่วงเก่ากว่าที่โหลดไว้ หรือมีรายการในช่วงที่ไม่พบใบยืม → ดึงประวัติเต็ม (ครั้งเดียว)
+  var needFull=!_swlFull&&(ds<_swlCoveredFrom()||built.events.some(function(e){return e.eq==='(ไม่พบใบยืม)'&&e.date>=ds&&e.date<=de;}));
+  if(needFull){
+    msg.innerHTML='<span style="color:var(--mu)">⏳ ช่วงวันที่นี้ต้องใช้ข้อมูลย้อนหลังเพิ่ม กำลังดึงจากฐานข้อมูล (ครั้งเดียว)...</span>';
+    try{await _swlEnsureFull();}catch(e){if(seq===_swlRenderSeq)msg.innerHTML='<span style="color:var(--er)">ดึงข้อมูลย้อนหลังไม่สำเร็จ: '+esc(e.message)+'</span>';return;}
+    if(seq!==_swlRenderSeq)return;   // ผู้ใช้เปลี่ยนตัวกรองระหว่างรอ — รอบใหม่จะวาดเอง
+    src=_swlFull;usedFull=true;built=_swlBuildEvents(src.loans,src.borrows);
+  }
+  if(seq!==_swlRenderSeq)return;
+  var types=_SWL_TYPES.filter(function(t){var c=document.getElementById('swlT_'+t.k);return c&&c.checked;}).map(function(t){return t.k;});
+  var fStaff=document.getElementById('swlStaff').value,fEq=document.getElementById('swlEq').value,fDept=document.getElementById('swlDept').value;
+  // ตัวเลือกใน dropdown: จากงานในช่วงวันที่ที่เลือก (+ รายชื่อเจ้าหน้าที่ในระบบ)
+  var inDate=built.events.filter(function(e){return e.date&&e.date>=ds&&e.date<=de;});
+  var noDate=built.events.filter(function(e){return !e.date;}).length;
+  var staffSet={},eqSet={},deptSet={};
+  (STAFF||[]).forEach(function(s){if(s&&s!=='อื่นๆ')staffSet[_swlName(s)]=1;});
+  inDate.forEach(function(e){staffSet[e.staff]=1;eqSet[e.eq]=1;if(e.dept)deptSet[e.dept]=1;if(e.dept2)deptSet[e.dept2]=1;});
+  var thSort=function(a,b){return a.localeCompare(b,'th');};
+  _swlFillSelect('swlStaff',Object.keys(staffSet).sort(thSort));
+  _swlFillSelect('swlEq',Object.keys(eqSet).sort(thSort));
+  _swlFillSelect('swlDept',Object.keys(deptSet).sort(thSort));
+  var noTime={give:0,ret:0,tr:0};
+  var rows=inDate.filter(function(e){
+    if(types.indexOf(e.type)<0)return false;
+    if(fStaff&&e.staff!==fStaff)return false;
+    if(fEq&&e.eq!==fEq)return false;
+    if(fDept&&e.dept!==fDept&&e.dept2!==fDept)return false;
+    if(useTime){if(!e.time){noTime[e.type]++;return false;}if(!_swlInTime(e.time,ts,te))return false;}
+    return true;
+  });
+  // สรุปต่อคน
+  var per={};
+  if(!fStaff)(STAFF||[]).forEach(function(s){if(s&&s!=='อื่นๆ'){var n=_swlName(s);per[n]={name:n,give:0,ret:0,tr:0,total:0};}});
+  rows.forEach(function(e){if(!per[e.staff])per[e.staff]={name:e.staff,give:0,ret:0,tr:0,total:0};per[e.staff][e.type]++;per[e.staff].total++;});
+  var list=Object.keys(per).map(function(k){return per[k];});
+  if(fStaff)list=list.filter(function(p){return p.name===fStaff;});
+  list.sort(function(a,b){if((a.name===_SWL_NONAME)!==(b.name===_SWL_NONAME))return a.name===_SWL_NONAME?1:-1;if(b.total!==a.total)return b.total-a.total;return a.name.localeCompare(b.name,'th');});
+  var tot={give:0,ret:0,tr:0};rows.forEach(function(e){tot[e.type]++;});
+  var perEq={};   // {ชื่อ:{ชนิดเครื่องมือ:{give,ret,tr,total}}}
+  rows.forEach(function(e){var m=perEq[e.staff]||(perEq[e.staff]={});var q=m[e.eq]||(m[e.eq]={eq:e.eq,give:0,ret:0,tr:0,total:0});q[e.type]++;q.total++;});
+  _swlLast={perEq:perEq,rows:rows,list:list,types:types,tot:tot,ds:ds,de:de,ts:useTime?ts:'',te:useTime?te:'',fStaff:fStaff,fEq:fEq,fDept:fDept,noTime:noTime,useTime:useTime};
+  // ข้อความแจ้ง (ไม่ปล่อยให้ข้อมูลหายเงียบ)
+  if(usedFull)notes.push('📦 รวมข้อมูลย้อนหลังทั้งหมด (รวม Archive) แล้ว');
+  if(useTime){
+    var nt=types.filter(function(k){return noTime[k]>0;}).map(function(k){return _SWL_TYPES.filter(function(t){return t.k===k;})[0].n+' '+noTime[k];});
+    if(nt.length)notes.push('⏱ ไม่มีข้อมูลเวลา (ไม่ถูกนับในช่วงเวลานี้): '+nt.join(' · ')+' รายการ');
+  }
+  if(noDate)notes.push('⚠️ มี '+noDate+' รายการที่ไม่มีวันที่ในระบบ (ไม่ถูกนับ)');
+  msg.innerHTML=notes.length?'<span style="color:var(--mu)">'+notes.map(esc).join('<br>')+'</span>':'';
+  // การ์ด
+  document.getElementById('swlCards').innerHTML=_SWL_TYPES.filter(function(t){return types.indexOf(t.k)>=0;}).map(function(t){
+    return '<div style="background:var(--s2);border-radius:8px;padding:10px 12px;border-left:3px solid '+t.c+'"><div style="font-size:11px;color:var(--mu)">'+t.n+'</div><div style="font-size:22px;font-weight:700">'+tot[t.k]+'</div></div>';
+  }).join('')+'<div style="background:var(--s2);border-radius:8px;padding:10px 12px"><div style="font-size:11px;color:var(--mu)">รวมทุกงาน</div><div style="font-size:22px;font-weight:700">'+rows.length+'</div></div>';
+  // ตาราง
+  var mx=Math.max.apply(null,[1].concat(list.map(function(p){return p.total;})));
+  var tsel=_SWL_TYPES.filter(function(t){return types.indexOf(t.k)>=0;});
+  var th='padding:7px 8px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--mu);font-weight:700';
+  var td='padding:7px 8px;border-bottom:1px solid var(--bd);font-size:13px';
+  var html='<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+';text-align:left">เจ้าหน้าที่</th>'
+    +tsel.map(function(t){return '<th style="'+th+';text-align:right">'+t.n+'</th>';}).join('')
+    +'<th style="'+th+';text-align:right">รวม</th><th style="'+th+';width:32%"></th></tr></thead><tbody>';
+  if(!list.length)html+='<tr><td colspan="'+(tsel.length+3)+'" style="'+td+';text-align:center;color:var(--mu)">ไม่มีข้อมูลในช่วงนี้</td></tr>';
+  list.forEach(function(p){
+    var bar='<div style="display:flex;height:12px;border-radius:3px;overflow:hidden;background:var(--s2);width:'+Math.round(p.total/mx*100)+'%">'
+      +tsel.map(function(t){return p.total?'<div style="width:'+(p[t.k]/p.total*100)+'%;background:'+t.c+'"></div>':'';}).join('')+'</div>';
+    var sel=_swlDetailStaff===p.name;
+    html+='<tr data-swl-staff="'+esc(p.name)+'" style="cursor:pointer'+(sel?';background:rgba(0,200,255,.07)':'')+'" title="คลิกดูรายการ">'
+      +'<td style="'+td+(p.name===_SWL_NONAME?';color:var(--mu)':'')+'">'
+        +(p.total?'<span data-swl-exp="'+esc(p.name)+'" title="กาง/พับ แยกตามชนิดเครื่องมือ" style="display:inline-block;width:20px;color:var(--ac);font-weight:700;cursor:pointer">'+(_swlExpanded[p.name]?'▾':'▸')+'</span>':'<span style="display:inline-block;width:20px"></span>')
+        +esc(p.name)+'</td>'
+      +tsel.map(function(t){return '<td style="'+td+';text-align:right">'+p[t.k]+'</td>';}).join('')
+      +'<td style="'+td+';text-align:right;font-weight:700">'+p.total+'</td><td style="'+td+'">'+bar+'</td></tr>';
+    if(_swlExpanded[p.name]&&p.total)html+=_swlEqSubRows(perEq[p.name],tsel);
+  });
+  html+='</tbody></table><div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--mu);margin-top:6px">'
+    +tsel.map(function(t){return '<span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+t.c+';vertical-align:-1px;margin-right:4px"></span>'+t.n+'</span>';}).join('')
+    +'<span>· ▸ กางดูแยกตามชนิดเครื่องมือ · คลิกชื่อเพื่อดูรายการรายใบ</span></div>';
+  var tbl=document.getElementById('swlTable');
+  tbl.innerHTML=html;
+  if(!tbl._swlBound){
+    tbl._swlBound=true;
+    tbl.addEventListener('click',function(e){
+      var ex=e.target.closest('[data-swl-exp]');
+      if(ex){var en=ex.getAttribute('data-swl-exp');if(_swlExpanded[en])delete _swlExpanded[en];else _swlExpanded[en]=1;_swlRender();return;}
+      var tr=e.target.closest('[data-swl-staff]');if(!tr)return;
+      var n=tr.getAttribute('data-swl-staff');
+      _swlDetailStaff=(_swlDetailStaff===n)?null:n;
+      _swlRender();
+    });
+  }
+  _swlRenderDetail();
+}
+function _swlEqSorted(m){
+  return Object.keys(m||{}).map(function(k){return m[k];}).sort(function(a,b){if(b.total!==a.total)return b.total-a.total;return a.eq.localeCompare(b.eq,'th');});
+}
+function _swlEqSubRows(m,tsel){
+  var td='padding:5px 8px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--mu);background:var(--s2)';
+  return _swlEqSorted(m).map(function(q){
+    return '<tr data-swl-sub="1"><td style="'+td+';padding-left:34px">'+esc(q.eq)+'</td>'
+      +tsel.map(function(t){return '<td style="'+td+';text-align:right'+(q[t.k]?';color:var(--tx)':'')+'">'+q[t.k]+'</td>';}).join('')
+      +'<td style="'+td+';text-align:right;color:var(--tx)">'+q.total+'</td><td style="'+td+'"></td></tr>';
+  }).join('');
+}
+function _swlExpandAll(){
+  if(!_swlLast)return;
+  var names=_swlLast.list.filter(function(p){return p.total;}).map(function(p){return p.name;});
+  var allOpen=names.length&&names.every(function(n){return _swlExpanded[n];});
+  _swlExpanded={};
+  if(!allOpen)names.forEach(function(n){_swlExpanded[n]=1;});
+  _swlRender();
+}
+function _swlSortEv(a,b){if(a.date!==b.date)return a.date<b.date?1:-1;return (a.time||'')<(b.time||'')?1:(a.time||'')>(b.time||'')?-1:0;}
+function _swlTypeName(k){var t=_SWL_TYPES.filter(function(x){return x.k===k;})[0];return t?t.n:k;}
+function _swlDeptLabel(e){return e.type==='tr'?((e.dept2||'?')+' → '+(e.dept||'?')):e.dept;}
+function _swlRenderDetail(){
+  var box=document.getElementById('swlDetail');if(!box)return;
+  if(!_swlLast||!_swlDetailStaff){box.innerHTML='';return;}
+  var evs=_swlLast.rows.filter(function(e){return e.staff===_swlDetailStaff;}).sort(_swlSortEv);
+  var MAX=500;
+  var th='padding:6px 8px;border-bottom:1px solid var(--bd);font-size:11px;color:var(--mu);font-weight:700;text-align:left';
+  var td='padding:6px 8px;border-bottom:1px solid var(--bd);font-size:12px';
+  var html='<div style="font-size:13px;font-weight:700;margin-bottom:6px">📋 รายการของ '+esc(_swlDetailStaff)+' ('+evs.length+' รายการ'+(evs.length>MAX?' — แสดง '+MAX+' รายการล่าสุด ดูครบใน Excel':'')+')</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'
+    +['วันที่','เวลา','งาน','เครื่องมือ','No.','แผนก','ผู้ป่วย','LoanID'].map(function(h){return '<th style="'+th+'">'+h+'</th>';}).join('')+'</tr></thead><tbody>';
+  if(!evs.length)html+='<tr><td colspan="8" style="'+td+';text-align:center;color:var(--mu)">ไม่มีรายการตามตัวกรองนี้</td></tr>';
+  evs.slice(0,MAX).forEach(function(e){
+    html+='<tr><td style="'+td+'">'+esc(e.date)+'</td><td style="'+td+';color:'+(e.time?'var(--tx)':'var(--mu)')+'">'+(e.time?esc(e.time):'—')+'</td>'
+      +'<td style="'+td+'">'+esc(_swlTypeName(e.type))+'</td><td style="'+td+'">'+esc(e.eq)+'</td><td style="'+td+';font-family:var(--mo)">'+esc(e.eqNo||'—')+'</td>'
+      +'<td style="'+td+'">'+esc(_swlDeptLabel(e))+'</td><td style="'+td+'">'+esc(e.patient)+'</td><td style="'+td+';font-family:var(--mo);font-size:11px">'+esc(e.loanId)+'</td></tr>';
+  });
+  box.innerHTML=html+'</tbody></table></div>';
+}
+function _swlFilterDesc(L){
+  var p=['วันที่ '+L.ds+' ถึง '+L.de];
+  if(L.useTime)p.push('เวลา '+L.ts+'–'+L.te+(L.ts>L.te?' (ข้ามเที่ยงคืน)':''));
+  p.push('งาน: '+L.types.map(_swlTypeName).join('/'));
+  if(L.fStaff)p.push('เจ้าหน้าที่: '+L.fStaff);
+  if(L.fEq)p.push('เครื่องมือ: '+L.fEq);
+  if(L.fDept)p.push('แผนก: '+L.fDept);
+  return p.join(' · ');
+}
+function _swlSummaryRows(L){
+  var rows=[['เจ้าหน้าที่'].concat(L.types.map(_swlTypeName)).concat(['รวม'])];
+  L.list.forEach(function(p){rows.push([p.name].concat(L.types.map(function(k){return p[k];})).concat([p.total]));});
+  rows.push(['รวมทั้งหมด'].concat(L.types.map(function(k){return L.tot[k];})).concat([L.rows.length]));
+  return rows;
+}
+function _swlExcel(){
+  var L=_swlLast;if(!L){if(window.toast)toast('ยังไม่มีข้อมูล','warning');return;}
+  var rows=[['ภาระงานเจ้าหน้าที่'],['ตัวกรอง',_swlFilterDesc(L)]];
+  if(L.useTime){var nt=L.types.filter(function(k){return L.noTime[k]>0;}).map(function(k){return _swlTypeName(k)+' '+L.noTime[k];});if(nt.length)rows.push(['ไม่มีข้อมูลเวลา (ไม่ถูกนับ)',nt.join(', ')]);}
+  rows.push([]);
+  rows=rows.concat(_swlSummaryRows(L));
+  rows.push([]);rows.push(['แยกตามชนิดเครื่องมือ']);
+  rows.push(['เจ้าหน้าที่','ชนิดเครื่องมือ'].concat(L.types.map(_swlTypeName)).concat(['รวม']));
+  L.list.forEach(function(p){if(!p.total)return;_swlEqSorted(L.perEq[p.name]).forEach(function(q){rows.push([p.name,q.eq].concat(L.types.map(function(k){return q[k];})).concat([q.total]));});});
+  rows.push([]);rows.push(['รายการทั้งหมด']);
+  rows.push(['วันที่','เวลา','งาน','เจ้าหน้าที่','เครื่องมือ','No.','แผนก','ผู้ป่วย','LoanID']);
+  L.rows.slice().sort(_swlSortEv).forEach(function(e){rows.push([e.date,e.time||'',_swlTypeName(e.type),e.staff,e.eq,e.eqNo,_swlDeptLabel(e),e.patient,e.loanId]);});
+  dlXLS('ภาระงานเจ้าหน้าที่_'+L.ds+'_'+L.de,rows);
+}
+function _swlPrint(){
+  var L=_swlLast;if(!L){if(window.toast)toast('ยังไม่มีข้อมูล','warning');return;}
+  dlPDF('ภาระงานเจ้าหน้าที่ — '+esc(_swlFilterDesc(L)),_swlSummaryRows(L));   // dlPDF ใส่ title ลง HTML ตรงๆ ไม่ escape เอง
+}
 
 // ─────────────────────────────────────────────────────────── §MANUAL-VIEWER
 var _DOCX_B64="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";
