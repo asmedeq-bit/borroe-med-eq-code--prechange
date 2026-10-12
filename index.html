@@ -2391,9 +2391,10 @@ function toggleTheme(){
           <input type="text" id="giverOth" class="sth" placeholder="ระบุชื่อ..."></div>
         <div class="fg"><label>หมายเลขเครื่องมือ</label>
           <div style="position:relative">
-            <input type="text" id="eqNo" list="eqNoList" placeholder="กรอกหรือเลือกหมายเลข... (สแกน QR ได้)" autocomplete="off" oninput="_scanHandleEqNo(this,_borrowEqName)" style="width:100%">
+            <input type="text" id="eqNo" list="eqNoList" placeholder="กรอกหรือเลือกหมายเลข... (สแกน QR ได้)" autocomplete="off" oninput="_scanHandleEqNo(this,_borrowEqName);_eqNoAssist()" style="width:100%">
             <datalist id="eqNoList"></datalist>
           </div>
+          <div id="eqNoAssist"></div>
         </div>
       </div>
       <label style="font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">อุปกรณ์ประกอบ</label>
@@ -6206,7 +6207,7 @@ function _loanCollectUnits(){
       var no='',fm='';
       if(_isVhEq(name)){
         var a=document.getElementById('vheqno_'+i+'_'+k),b=document.getElementById('vhfmno_'+i+'_'+k);
-        no=a?a.value.trim():'';fm=b?b.value.trim():'';
+        no=a?_eqNoNorm(a.value):'';fm=b?b.value.trim():'';
       }
       var p=[];if(no)p.push('No.'+no);if(fm)p.push('Flow Meter No.'+fm);
       var detail=p.length?(p.join(' | ')+(base?' | '+base:'')):base;
@@ -6505,7 +6506,7 @@ async function submitLoan(){
   if(_standbySelected){
     // ── STANDBY path ──
     var sbyType=document.querySelector('input[name="standbyType"]:checked');
-    var sbyNo=document.getElementById('sbyEqNo').value.trim();
+    var sbyNo=_eqNoNorm(document.getElementById('sbyEqNo').value);
     if(!sbyType){bigToast('กรุณาเลือกประเภทเครื่อง Standby\n(Ventilator หรือ HFNC)','error');return;}
     if(!sbyNo){bigToast('กรุณากรอกหมายเลขเครื่อง Standby','error');return;}
     var detail='Standby | No.'+sbyNo;
@@ -6679,8 +6680,9 @@ function qbUpdateUnits(){
           +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">'
             +'<span style="font-size:12px;font-weight:600;min-width:90px">'+esc(name)+(qty>1?' #'+(i+1):'')+'</span>'
             +(name==='อื่นๆ'?'<input type="text" id="qbOth_'+key+'" placeholder="ระบุชื่อ/รายละเอียดเครื่องมือ" style="flex:1;min-width:150px;padding:4px 8px;font-size:12px;border-color:var(--wn)">':'')
-            +'<input type="text" id="qbEqNo_'+key+'" placeholder="เลขเครื่อง (สแกน QR ได้)" style="flex:1;min-width:100px;padding:4px 8px;font-size:12px" oninput="_qbCheckEqNoLive(\''+key+'\',\''+esc(name).replace(/'/g,"\\'")+'\')">'
+            +'<input type="text" id="qbEqNo_'+key+'" data-eqtype="'+esc(name)+'" placeholder="เลขเครื่อง (สแกน QR ได้)" style="flex:1;min-width:100px;padding:4px 8px;font-size:12px" oninput="_qbCheckEqNoLive(\''+key+'\',\''+esc(name).replace(/'/g,"\\'")+'\')">'
           +'</div>'
+          +'<div id="qbAssist_'+key+'"></div>'
           +'<div id="qbWarn_'+key+'"></div>'
           +'<div id="qbStatus_'+key+'"></div>'
           +'<details style="font-size:11px"><summary style="cursor:pointer;color:var(--mu)">อุปกรณ์ประกอบ (ถ้ามี)</summary>'
@@ -6722,6 +6724,8 @@ function qbUpdateUnits(){
       });
     }
   });
+  // ปุ่มกดเลือกเลขมีตัวอักษร + คำแนะนำ ของทุกแถว (หลังคืนค่าเดิมแล้ว)
+  wrap.querySelectorAll('input[id^="qbEqNo_"]').forEach(function(el){var k=el.id.slice(7);_eqNoAssistRender('qb_'+k,el.id,'qbAssist_'+k,el.getAttribute('data-eqtype')||'');});
 }
 function _qbCheckEqNoLive(key,name){
   var noEl=document.getElementById('qbEqNo_'+key);
@@ -6733,12 +6737,8 @@ function _qbCheckEqNoLive(key,name){
     noEl.value=fixed;
     if(!fixed)return; // ไม่ตรงชนิด — เคลียร์ไปแล้ว หยุดแค่นี้ ไม่ต้องเช็คทะเบียนต่อ
   }
-  var val=noEl.value.trim();
-  if(_eqNoInRegistry(name,val)===false){
-    warnEl.innerHTML='<div style="font-size:11px;color:var(--wn);margin-top:3px">⚠️ ไม่พบเลข "'+esc(val)+'" ในทะเบียน '+esc(name)+' — ตรวจสอบเลขอีกครั้ง (ยังบันทึกได้ปกติ)</div>';
-  }else{
-    warnEl.innerHTML='';
-  }
+  warnEl.innerHTML='';   // ข้อความ "ไม่พบในทะเบียน" แสดงใน _eqNoAssistRender (ตรวจด้วยเลขที่จัดรูปแบบแล้ว + เสนอเลขใกล้เคียง)
+  _eqNoAssistRender('qb_'+key,'qbEqNo_'+key,'qbAssist_'+key,name);   // ปุ่มกดเลือก + จะบันทึกเป็น/ไม่พบในทะเบียน/หลายเลข
 }
 
 function qbToggleAccExtra(key,accId){
@@ -6768,8 +6768,9 @@ async function saveQuickBorrow(){
       var key=(name+'__'+i).replace(/[^a-zA-Z0-9ก-๙]/g,'_');
       if(_qbUnitStatus[key]==='success')continue;
       var noEl=document.getElementById('qbEqNo_'+key);
-      var eqNo=noEl?noEl.value.trim():'';
+      var eqNo=_eqNoNorm(noEl?noEl.value:'');   // รูปแบบตามทะเบียน
       if(!eqNo){bigToast('กรุณากรอกเลขเครื่อง\n'+name+(qty>1?' #'+(i+1):''),'error');if(noEl)noEl.focus();return;}
+      if(_eqNoMulti(eqNo)){bigToast('หมายเลขเครื่องใส่ได้ 1 เครื่องต่อ 1 รายการ\n'+name+(qty>1?' #'+(i+1):'')+': "'+esc(eqNo)+'"','error');if(noEl)noEl.focus();return;}
       var detail='';
       if(name==='อื่นๆ'){var othEl=document.getElementById('qbOth_'+key);detail=othEl?othEl.value.trim():'';}
       var accs=[];
@@ -6853,7 +6854,7 @@ async function cancelLoan(lid){if(!confirm('ยืนยันการยกเ
 async function deleteLoan(lid){if(!confirm('ลบรายการ '+lid+' ออกจากระบบ? (ไม่สามารถกู้คืนได้)'))return;try{_invSyncLoanCancelled(lid);await API.deleteLoan(lid);bigToast('ลบรายการแล้ว\n'+lid,'success');setTimeout(loadAll,1500);}catch(e){bigToast('เกิดข้อผิดพลาด:\n'+e.message,'error');}}
 
 async function autoRecalcLoan(loanID){if(!loanID||!loans||!borrows)return;var exp=expanded();var items=exp.filter(function(item){return S(item.loan.LoanID)===S(loanID);});if(!items.length)return;var statuses=items.map(function(i){return i.status;});var hasPending=statuses.indexOf('PENDING')>=0;var hasActive=statuses.indexOf('ACTIVE')>=0;var hasAccP=statuses.indexOf('ACC_PENDING')>=0;var allRet=statuses.every(function(s){return s==='RETURNED'||s==='ACC_PENDING';});var allCancelled=statuses.every(function(s){return s==='CANCELLED';});var newStatus=allCancelled?'CANCELLED':hasPending?'PENDING':hasActive?'ACTIVE':hasAccP?'ACC_PENDING':allRet?'RETURNED':'PENDING';var current=loans.find(function(l){return S(l.LoanID)===S(loanID);});if(current&&S(current.Status)!==newStatus){try{await API.updateLoan(loanID,{status:newStatus});}catch(e){console.warn('autoRecalcLoan error:',e);}}}
-function openBorrow(loanID,idx){var loan=loans.find(function(l){return S(l.LoanID)===S(loanID);});var eq=loan?(loan.EquipmentList||[])[idx]:null;_borrowEqName=eq?S(eq.name):'';document.getElementById('bLoanID').value=S(loanID);document.getElementById('bIdx').value=idx;document.getElementById('giverSel').value='';document.getElementById('giverOth').style.display='none';document.getElementById('giverOth').value='';document.getElementById('eqNo').value='';rebuildEqNoDatalist(_borrowEqName);selAccs={};buildAccTable();renderAccTags();document.getElementById('bInfo').innerHTML=loan?'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px"><div>📅 '+loan.LoanDate+'</div><div>ผู้ยืม: <strong>'+ES(loan.BorrowerName)+'</strong></div><div>แผนก: <strong>'+ES(loan.DeptName)+'</strong></div><div>ผู้ป่วย: '+ES(loan.PatientName)+'</div></div>':'';document.getElementById('bItem').innerHTML=eq?'🔧 <span style="color:var(--ac)">'+ES(eq.name)+'</span>'+(eq.detail?' — '+esc(eq.detail):''):'-';openM('mBorrow');}
+function openBorrow(loanID,idx){var loan=loans.find(function(l){return S(l.LoanID)===S(loanID);});var eq=loan?(loan.EquipmentList||[])[idx]:null;_borrowEqName=eq?S(eq.name):'';document.getElementById('bLoanID').value=S(loanID);document.getElementById('bIdx').value=idx;document.getElementById('giverSel').value='';document.getElementById('giverOth').style.display='none';document.getElementById('giverOth').value='';document.getElementById('eqNo').value='';rebuildEqNoDatalist(_borrowEqName);_eqNoAssist();selAccs={};buildAccTable();renderAccTags();document.getElementById('bInfo').innerHTML=loan?'<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px"><div>📅 '+loan.LoanDate+'</div><div>ผู้ยืม: <strong>'+ES(loan.BorrowerName)+'</strong></div><div>แผนก: <strong>'+ES(loan.DeptName)+'</strong></div><div>ผู้ป่วย: '+ES(loan.PatientName)+'</div></div>':'';document.getElementById('bItem').innerHTML=eq?'🔧 <span style="color:var(--ac)">'+ES(eq.name)+'</span>'+(eq.detail?' — '+esc(eq.detail):''):'-';openM('mBorrow');}
 // ตรวจว่าเลขเครื่องที่กรอก/สแกนมีอยู่ในทะเบียนจริงไหม (ชนิด+เลขต้องตรงกัน) — ใช้
 // "เตือน" เท่านั้น ไม่เคยบล็อกการบันทึกจริงเด็ดขาด (ทะเบียนเป็นแค่ข้อมูลเสริม
 // ตรงกับหลักการเดิมของ _invSyncStatus) — คืนค่า:
@@ -6861,6 +6862,71 @@ function openBorrow(loanID,idx){var loan=loans.find(function(l){return S(l.LoanI
 //   false = ไม่พบเลขนี้ในทะเบียนของชนิดนี้ (ควรเตือน)
 //   null  = ยังไม่มีข้อมูลทะเบียนของชนิดนี้เลย (ไม่ควรเตือน เพราะทะเบียนอาจแค่ยัง
 //           กรอกไม่ครบ ไม่ใช่เลขที่พิมพ์/สแกนผิดจริง)
+// ── หมายเลขเครื่อง: รูปแบบมาตรฐานตามทะเบียนเครื่องมือรายตัว (8 ต.ค. 2569) ─────────────────
+// จัดรูปแบบเฉพาะกรณีไม่กำกวม: ตัดช่องว่าง · ตัวพิมพ์ใหญ่ · ตัด No/No./# ที่นำหน้าตัวเลข · ตัดจุดท้าย · ตัดอักษรไทยที่ติดมา
+// (แป้นค้างภาษาไทย) — ถ้าตัดแล้วไม่เหลืออะไร คืนค่าเดิม (ไม่ทำลายข้อความ) · "17T" ไม่ตัด T เอง → เสนอเลขใกล้เคียงให้เลือก
+function _eqNoNorm(v){
+  var raw=S(v);if(!raw)return'';
+  var s=raw.replace(/[฀-๿]/g,'').replace(/\s+/g,'').toUpperCase().replace(/^(NO\.?|#)(?=\d)/,'').replace(/\.+$/,'');
+  return s||raw;
+}
+function _eqNoMulti(v){return /[,，;]/.test(S(v));}   // หลายเครื่องในช่องเดียว (1 รายการ = 1 เครื่อง)
+// เลขในทะเบียนที่ใกล้เคียง (กรณีไม่พบ): ตัวเลขล้วนที่เหลือหลังตัดตัวอักษร เช่น 17T → 17 (ต้องมีอยู่จริงในทะเบียนชนิดนั้น)
+function _eqNoSuggest(type,no){
+  if(_eqNoInRegistry(type,no)!==false)return[];
+  var d=S(no).replace(/[^0-9]/g,''),out=[];
+  if(d&&d!==S(no)&&_eqNoInRegistry(type,d)===true)out.push(d);
+  return out;
+}
+// ชนิดเครื่องมือของบันทึกยืม (ใช้ตรวจเลขกับทะเบียนในหน้า Admin)
+function _eqTypeOfRec(recID){
+  var b=borrows?borrows.find(function(x){return S(x.RecordID)===S(recID);}):null;if(!b)return'';
+  var l=loans?loans.find(function(x){return S(x.LoanID)===S(b.LoanID);}):null;
+  var e=l?(l.EquipmentList||[])[N(b.EquipItemIndex)]:null;return e?S(e.name):'';
+}
+// ตรวจก่อนบันทึก (หน้า Admin): หลายเลข → ไม่บันทึก · ไม่มีในทะเบียน → ถามยืนยัน (ไม่บล็อก)
+function _eqNoAdminOk(recID,no){
+  if(!no)return true;
+  if(_eqNoMulti(no)){bigToast('หมายเลขเครื่องใส่ได้ 1 เครื่องต่อ 1 รายการ\n("'+esc(no)+'")','error');return false;}
+  var t=_eqTypeOfRec(recID);
+  if(t&&_eqNoInRegistry(t,no)===false){var sg=_eqNoSuggest(t,no);return confirm('ไม่พบเลข "'+no+'" ในทะเบียน '+t+(sg.length?'\nเลขที่ใกล้เคียงในทะเบียน: '+sg.join(', '):'')+'\nยืนยันจะบันทึกต่อไหม?');}
+  return true;
+}
+// ใต้ช่องเลขเครื่อง: ปุ่มกดเลือกเลขที่มีตัวอักษร + คำแนะนำสด — ตัวแสดงผลกลาง ใช้ได้หลายช่อง (ctx)
+//   'borrow' = หน้าบันทึกจ่ายเครื่อง (#eqNo) · 'qb_<key>' = แต่ละแถวในบันทึกยืมด่วน (#qbEqNo_<key>)
+var _eqNoCtx={};
+function _eqNoAssistRender(ctx,inpId,boxId,type){
+  var box=document.getElementById(boxId),inp=document.getElementById(inpId);if(!box||!inp)return;
+  var units=(window._EQ_UNITS&&type&&window._EQ_UNITS[type])||[];
+  var list=units.filter(function(u){return /[A-Za-z]/.test(S(u.unit_no));});
+  _eqNoCtx[ctx]={inp:inpId,list:list};
+  var h='';
+  if(list.length){
+    h+='<div style="margin-top:6px"><div style="font-size:10px;color:var(--mu);margin-bottom:4px">เลขที่มีตัวอักษร — กดเลือกได้เลย (เลขตัวเลขพิมพ์ตามปกติ)</div><div style="display:flex;flex-wrap:wrap;gap:5px">'
+      +list.map(function(u,i){var st=S(u.status),dim=st&&st!=='คงเหลือ';
+        return'<button type="button" class="btn bg sm" onclick="_eqNoCtxPick(\''+ctx+'\','+i+')" title="สถานะในทะเบียน: '+esc(st||'-')+'" style="font-size:11px;padding:3px 9px;font-family:var(--mo);'+(dim?'opacity:.6;':'')+'">'+esc(S(u.unit_no))+(dim?' <span style="font-size:9px;color:var(--wn)">('+esc(st)+')</span>':'')+'</button>';}).join('')
+      +'</div></div>';
+  }
+  var raw=S(inp.value);
+  if(raw){
+    var n=_eqNoNorm(raw),msg=[];
+    if(_eqNoMulti(raw))msg.push('<span style="color:var(--er)">⚠️ ใส่ได้ 1 เครื่องต่อ 1 รายการ — แยกบันทึกทีละเครื่อง</span>');
+    else{
+      if(n!==raw)msg.push('<span style="color:var(--ac)">✓ จะบันทึกเป็น <b style="font-family:var(--mo)">'+esc(n)+'</b> (รูปแบบตามทะเบียน)</span>');
+      if(type&&_eqNoInRegistry(type,n)===false){
+        var sg=_eqNoSuggest(type,n);
+        msg.push('<span style="color:var(--wn)">⚠️ ไม่พบเลข <b style="font-family:var(--mo)">'+esc(n)+'</b> ในทะเบียน '+esc(type)+' — ตรวจสอบเลขอีกครั้ง (ยังบันทึกได้)</span>'
+          +sg.map(function(x){return' <button type="button" class="btn bg sm" style="font-size:10px;padding:1px 8px;font-family:var(--mo)" onclick="_eqNoCtxUse(\''+ctx+'\',\''+esc(x)+'\')">ใช้ '+esc(x)+'</button>';}).join(''));
+      }
+    }
+    if(msg.length)h+='<div style="font-size:11px;margin-top:5px;line-height:1.7">'+msg.join('<br>')+'</div>';
+  }
+  box.innerHTML=h;
+}
+function _eqNoCtxPick(ctx,i){var c=_eqNoCtx[ctx],u=c&&c.list[i];if(u)_eqNoCtxUse(ctx,S(u.unit_no));}
+// ใส่ค่าแล้วยิง input event → ตัวตรวจเดิมของช่องนั้น (QR/ทะเบียน) + คำแนะนำ ทำงานต่อเหมือนผู้ใช้พิมพ์เอง
+function _eqNoCtxUse(ctx,v){var c=_eqNoCtx[ctx],inp=c&&document.getElementById(c.inp);if(!inp)return;inp.value=v;inp.dispatchEvent(new Event('input',{bubbles:true}));}
+function _eqNoAssist(){_eqNoAssistRender('borrow','eqNo','eqNoAssist',typeof _borrowEqName!=='undefined'?_borrowEqName:'');}
 function _eqNoInRegistry(type,no){
   if(!window._EQ_UNITS||!window._EQ_UNITS[type]||!window._EQ_UNITS[type].length)return null;
   var noS=S(no).trim();
@@ -6868,7 +6934,8 @@ function _eqNoInRegistry(type,no){
   return window._EQ_UNITS[type].some(function(u){return S(u.unit_no)===noS;});
 }
 
-async function saveBorrow(){var loanID=S(document.getElementById('bLoanID').value);var idx=N(document.getElementById('bIdx').value);var giver=getStaff('giver');var eqNo=S(document.getElementById('eqNo').value);if(!loanID){bigToast('ไม่พบ LoanID','error');return;}if(!giver){bigToast('กรุณาเลือกหรือระบุผู้ให้ยืม','error');return;}
+async function saveBorrow(){var loanID=S(document.getElementById('bLoanID').value);var idx=N(document.getElementById('bIdx').value);var giver=getStaff('giver');var eqNo=_eqNoNorm(document.getElementById('eqNo').value);if(!loanID){bigToast('ไม่พบ LoanID','error');return;}if(!giver){bigToast('กรุณาเลือกหรือระบุผู้ให้ยืม','error');return;}
+  if(_eqNoMulti(eqNo)){bigToast('หมายเลขเครื่องใส่ได้ 1 เครื่องต่อ 1 รายการ\nกรุณาแยกบันทึกทีละเครื่อง','error');return;}
   // เช็คสถานะพิเศษในทะเบียนก่อนบันทึกจริง (ซ่อม/รอจำหน่าย/ใช้ประจำแผนก/ว่าง)
   // ถ้าไม่มีข้อมูลในทะเบียนเลย (โหลดไม่ทัน/เลขนี้ยังไม่ลงทะเบียน) ให้ยืมได้ตามปกติ
   // ไม่เตือน — ไม่บล็อกการยืมจริงเด็ดขาดตามหลักการเดิม
@@ -6887,7 +6954,8 @@ async function saveBorrow(){var loanID=S(document.getElementById('bLoanID').valu
   // เลขนี้ไม่พบในทะเบียนของชนิดเครื่องมือนี้เลย (พิมพ์/สแกนผิด หรือทะเบียนกรอก
   // ไม่ครบ) — เตือนก่อนแล้วให้ตัดสินใจเอง ไม่บล็อกเด็ดขาด
   if(_eqNoInRegistry(_borrowEqName,eqNo)===false){
-    if(!confirm('ไม่พบเลข "'+eqNo+'" ในทะเบียน '+_borrowEqName+'\nยืนยันจะบันทึกต่อไปหรือไม่? (ยังบันทึกได้ปกติ แค่เตือนเฉยๆ)')){
+    var _sg=_eqNoSuggest(_borrowEqName,eqNo);
+    if(!confirm('ไม่พบเลข "'+eqNo+'" ในทะเบียน '+_borrowEqName+(_sg.length?'\nเลขที่ใกล้เคียงในทะเบียน: '+_sg.join(', ')+' (กดยกเลิกแล้วกดปุ่ม "ใช้ …" ใต้ช่องเลขเครื่อง)':'')+'\nยืนยันจะบันทึกต่อไปหรือไม่? (ยังบันทึกได้ปกติ แค่เตือนเฉยๆ)')){
       return;
     }
   }
@@ -10855,13 +10923,14 @@ async function admSaveEditBorrow(){
   var body={
     loan_id:document.getElementById('admEditRecLoanID').value.trim(),
     giver_name:document.getElementById('admEditGiver').value.trim(),
-    equipment_no:document.getElementById('admEditEqNo').value.trim(),
+    equipment_no:_eqNoNorm(document.getElementById('admEditEqNo').value),   // รูปแบบตามทะเบียน
     return_date:document.getElementById('admEditRetDate').value||null,
     receiver_name:document.getElementById('admEditReceiver').value.trim(),
     return_remark:document.getElementById('admEditRetRemark').value.trim(),
     status:document.getElementById('admEditRecStatus').value,
     machine_returned:document.getElementById('admEditMachineRet').value==='true'
   };
+  if(!_eqNoAdminOk(recID,body.equipment_no))return;   // หลายเลขในช่องเดียว / ไม่มีในทะเบียน (ถามยืนยัน)
   var ACC_ID_TO_COL={a1:'acc1_flow_meter_pto',a2:'acc2_flow_meter_70',a3:'acc3_self_inflating',a4:'acc4_full_face_mask',a5:'acc5_nasal_cannula',a7:'acc7_regulator_pto',a6:'acc6_other'};
   // อุปกรณ์ประกอบที่เพิ่มใหม่จากหน้า Admin (id ไม่อยู่ใน ACC_ID_TO_COL) ไม่มีคอลัมน์
   // ตายตัวรองรับ — ต้องอัปเดตกลับเข้า accessories (jsonb) แยกต่างหาก ไม่งั้นแก้เลข/
@@ -10953,10 +11022,11 @@ async function quickChangeFields(){
   catch(e){bigToast('เกิดข้อผิดพลาด\n'+e.message,'error');}
 }
 async function quickChangeEqNo(){
-  var recID=document.getElementById('qeRecID').value.trim();var eqNo=document.getElementById('qeNewEqNo').value.trim();var giver=document.getElementById('qeNewGiver').value.trim();
+  var recID=document.getElementById('qeRecID').value.trim();var eqNo=_eqNoNorm(document.getElementById('qeNewEqNo').value);var giver=document.getElementById('qeNewGiver').value.trim();
   if(!recID){bigToast('กรุณาใส่ RecordID','error');return;}
   var body={};if(eqNo)body.equipment_no=eqNo;if(giver)body.giver_name=giver;
   if(!Object.keys(body).length){bigToast('กรุณากรอกข้อมูลที่ต้องการแก้ไข','warning');return;}
+  if(eqNo&&!_eqNoAdminOk(recID,eqNo))return;
   if(!confirm('แก้ไขหมายเลขเครื่อง '+recID+' ?'))return;
   try{await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(recID),body);bigToast('บันทึกสำเร็จ\n'+recID,'success');['qeRecID','qeNewEqNo','qeNewGiver'].forEach(function(id){document.getElementById(id).value='';});setTimeout(function(){loadAll().then(renderAdminBorrows);},1500);}
   catch(e){bigToast('เกิดข้อผิดพลาด\n'+e.message,'error');}
