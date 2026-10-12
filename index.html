@@ -7845,6 +7845,19 @@ function _uaPdf(page){
         +'<thead><tr><th class="n">ชนิดเครื่องมือ</th><th>เลขเครื่อง</th><th class="n">แผนก</th><th class="n">ผู้ป่วย</th><th>LoanID</th><th>วันยืม</th><th>ใช้มาแล้ว (วัน)</th><th>สถานะ</th></tr></thead><tbody>'
         +list.map(function(r){var isDup=!!dup[r.eq+'‖'+r.no]&&r.rd!==D;return'<tr><td class="n">'+E(r.eq)+'</td><td>'+(E(r.no)||'—')+(isDup?' ⚠':'')+'</td><td class="n">'+E(r.i.loan.DeptName)+'</td><td class="n">'+E(r.i.loan.PatientName)+'</td><td>'+E(r.i.loan.LoanID)+'</td><td>'+_thShortDate(r.ld)+'</td><td>'+(_calDays(r.ld,D)-1)+'</td><td>'+_uaStatusOf(r,D,fut)+'</td></tr>';}).join('')
         +'</tbody></table>';
+    }else if(page==='hfncCmp'){
+      var HM=_hcModel();
+      title=_hcTitle(HM);
+      sub='ข้อมูล HFNC ที่มี '+_thShortDate(HM.H.first)+' – '+_thShortDate(HM.H.t)+' · ยี่ห้อตามที่ตั้งใน Admin → HFNC Set · '+(_hc.met==='avg'?'ค่า = เฉลี่ยจำนวนเครื่องที่ใช้อยู่ต่อวัน (นับตัวเครื่อง หารด้วยจำนวนวันตามปฏิทิน)':'ค่า = จำนวนครั้งที่ยืม (ตามวันยืม)');
+      var htd=function(r,b){return'<td class="'+(r&&!r.full?'part':'')+(b?' b':'')+'">'+_hcTxt(r)+'</td>';};
+      var hch=function(v){return'<td>'+(v===null?'—':(v>=0?'+':'')+v.toFixed(0)+'%')+'</td>';};
+      var hTL=HM.total[HM.total.length-1];
+      body='<table><thead><tr><th class="n" style="width:'+(HM.k==='m'?12:20)+'%">ยี่ห้อ/รุ่น</th>'+HM.cols.map(function(c){return'<th>'+E(c.label)+(c.sub?'<br><span class="sm">'+E(c.sub)+'</span>':'')+'</th>';}).join('')
+        +(HM.share?'<th>สัดส่วน</th>':'')+(HM.k==='y'?'<th>เปลี่ยนแปลง'+(HM.cmp?'<br><span class="sm">'+E(HM.cols[HM.cmp[0]].label)+' → '+E(HM.cols[HM.cmp[1]].label)+'</span>':'')+'</th>':'')+'</tr></thead><tbody>'
+        +HM.rows.map(function(r){return'<tr><td class="n">'+E(r.s.label)+'</td>'+r.vals.map(function(v,i){return htd(v,HM.cols[i].whole&&HM.k==='m');}).join('')+(HM.share?'<td>'+(r.share===null?'—':r.share+'%')+'</td>':'')+(HM.k==='y'?hch(r.chg):'')+'</tr>';}).join('')
+        +'<tr class="tot"><td class="n">รวมทุกยี่ห้อ</td>'+HM.total.map(function(v){return htd(v,true);}).join('')+(HM.share?'<td>'+(hTL&&hTL.v?'100%':'—')+'</td>':'')+(HM.k==='y'?hch(HM.totalChg):'')+'</tr></tbody></table>';
+      notes.push('* (สีส้ม) = ข้อมูลไม่ครบช่วง (ก่อนเริ่มมีข้อมูล หรือยังไม่จบเดือน/ปี) · ไม่ขึ้นกับช่องวันที่ของหัวข้อ HFNC set'+(HM.k==='y'?' · % เปลี่ยนแปลง แสดงเมื่อมีข้อมูลครบทั้งปีอย่างน้อย 2 ปี':''));
+      if(HM.cols[0].s<u.cutoff)notes.push('ข้อมูลก่อน '+_thShortDate(u.cutoff)+' อาจไม่ครบ (แอปโหลดใบที่คืนแล้วย้อนหลัง 1 ปี)');
     }else{
       var kind=page==='uaCmpM'?'m':'y',C=_uaCmpModel(kind);
       title='เทียบค่าเฉลี่ยเครื่องที่ใช้อยู่/วัน — '+(kind==='m'?'รายเดือน '+_uaYearLabel(_ua.year):'รายปี')+' ('+(_ua.basis==='fy'?'ปีงบประมาณ ต.ค.–ก.ย.':'ปีปฏิทิน ม.ค.–ธ.ค.')+')';
@@ -7880,6 +7893,137 @@ function _uaPdf(page){
     if(!win){alert('กรุณาอนุญาต popup เพื่อสร้าง PDF');return;}
     win.document.write(html);win.document.close();
   }catch(e){try{console.error('[uaPdf]',e);}catch(_){}if(typeof bigToast==='function')bigToast('สร้าง PDF ไม่สำเร็จ\n'+(e&&e.message||e),'error');}
+}
+// ── HFNC set: เทียบยี่ห้อ/รุ่น รายเดือน / รายปี (12 ต.ค. 2569) ──────────────────────────
+// ซ่อนตารางไว้ก่อน กด 📊 รายเดือน / 📈 รายปี จึงแสดง · ยี่ห้อจับด้วย _hfncSetDefs (Admin → HFNC Set) ชุดเดียวกับการ์ด
+// "ครั้งที่ยืม" = เกณฑ์เดียวกับการ์ด "ยืมทั้งหมด" (HFNC · มีบันทึกยืม · ไม่ใช่รอบันทึก/ยกเลิก · ตามวันยืม)
+// "เฉลี่ย/วัน" = เครื่องที่ใช้อยู่ต่อวัน จากระเบียนชุดเดียวกับหัวข้อ 🗓️ การใช้งานเครื่องมือ (_uaData) · ไม่ขึ้นกับช่องวันที่ของการ์ด
+var _hc={k:'',basis:'fy',year:0,met:'loan',_c:null};
+function _hcData(){
+  var u=_uaData(),cfg=JSON.stringify(_hfncSetGet());
+  if(_hc._c&&_hc._c.u===u&&_hc._c.cfg===cfg)return _hc._c;
+  var defs=_hfncSetDefs(),cnt={},ln={},first='';
+  defs.forEach(function(s){cnt[s.id]={};ln[s.id]={};});
+  function ids(no){return defs.filter(function(s){return s.match(no);}).map(function(s){return s.id;});}
+  (typeof expanded==='function'?expanded():[]).forEach(function(i){
+    if(S(i.eq.name)!=='HFNC'||!i.borrow||i.status==='PENDING'||i.status==='CANCELLED')return;
+    var ld=S(i.loan.LoanDate).slice(0,10);if(!_isYmd(ld))return;
+    var b=ids(S(i.borrow.EquipmentNo).trim());if(!b.length)return;
+    if(!first||ld<first)first=ld;
+    b.forEach(function(k){ln[k][ld]=(ln[k][ld]||0)+1;});
+  });
+  u.recs.forEach(function(r){
+    if(r.eq!=='HFNC')return;var b=ids(r.no);if(!b.length)return;
+    var e=r.rd||u.t;if(e>u.t)e=u.t;
+    for(var d=(r.ld<'2000-01-01'?'2000-01-01':r.ld);d<=e;d=_ymdAdd(d,1)){b.forEach(function(k){cnt[k][d]=(cnt[k][d]||0)+1;});}
+  });
+  _hc._c={u:u,cfg:cfg,defs:defs,cnt:cnt,ln:ln,first:first||u.t,t:u.t,has:!!first};
+  return _hc._c;
+}
+function _hcVal(H,id,s,e){
+  var s2=s<H.first?H.first:s,e2=e>H.t?H.t:e;if(s2>e2)return null;
+  var ks=id?[id]:H.defs.map(function(x){return x.id;}),sum=0,n=0,L=0;
+  for(var d=s2;d<=e2;d=_ymdAdd(d,1)){n++;for(var j=0;j<ks.length;j++){sum+=H.cnt[ks[j]][d]||0;L+=H.ln[ks[j]][d]||0;}}
+  return{v:_hc.met==='avg'?sum/n:L,n:n,full:s2===s&&e2===e};
+}
+function _hcTxt(r){return r?((_hc.met==='avg'?r.v.toFixed(1):String(r.v))+(r.full?'':'*')):'—';}
+function _hcYL(Y){return(_hc.basis==='fy'?'ปีงบ ':'ปี ')+Y;}
+function _hcYears(H){var a=_uaYearOf(H.first,_hc.basis),b=_uaYearOf(H.t,_hc.basis),o=[];for(var y=a;y<=b;y++)o.push(y);return o;}
+function _hcModel(){
+  var H=_hcData(),k=_hc.k==='y'?'y':'m',cols=[];
+  var ys=_hcYears(H);if(ys.indexOf(_hc.year)<0)_hc.year=_uaYearOf(H.t,_hc.basis);
+  if(k==='m'){
+    var r=_uaYearRange(_hc.year,_hc.basis),ym=r[0].slice(0,7);
+    for(var i=0;i<12;i++){var a=_ymAdd(ym,i);cols.push({label:_TH_MON_S[+a.slice(5,7)-1]+' '+String(+a.slice(0,4)+543).slice(2),s:a+'-01',e:_ymLast(a)});}
+    cols.push({label:'ทั้ง'+_hcYL(_hc.year),s:r[0],e:r[1],whole:true});
+  }else{
+    ys.forEach(function(Y){var r=_uaYearRange(Y,_hc.basis);cols.push({label:_hcYL(Y),sub:_thShortDate(r[0])+' – '+_thShortDate(r[1]),s:r[0],e:r[1],whole:true});});
+  }
+  var rows=H.defs.map(function(s){return{s:s,vals:cols.map(function(c){return _hcVal(H,s.id,c.s,c.e);})};});
+  var total=cols.map(function(c){return _hcVal(H,'',c.s,c.e);});
+  var mx=0;rows.forEach(function(r){r.vals.forEach(function(v,i){if(v&&(k==='y'||!cols[i].whole)&&v.v>mx)mx=v.v;});});
+  // รายเดือน + ครั้งที่ยืม → สัดส่วนทั้งปี · รายปี → % เปลี่ยนแปลง 2 ปีล่าสุดที่ข้อมูลครบทั้งปี (เกณฑ์เดียวกับ _uaCmpModel)
+  var last=cols.length-1,T=total[last],cmp=null;
+  if(k==='m'&&_hc.met==='loan')rows.forEach(function(r){var v=r.vals[last];r.share=(T&&T.v&&v)?Math.round(v.v/T.v*100):null;});
+  if(k==='y'){var f=[];total.forEach(function(t,i){if(t&&t.full)f.push(i);});if(f.length>=2)cmp=[f[f.length-2],f[f.length-1]];}
+  function hcChg(vals){if(!cmp)return null;var a=vals[cmp[0]],b=vals[cmp[1]];if(!a||!b||!a.full||!b.full||a.v===0)return null;return(b.v-a.v)/a.v*100;}
+  rows.forEach(function(r){r.chg=hcChg(r.vals);});
+  return{H:H,k:k,cols:cols,rows:rows,total:total,totalChg:hcChg(total),cmp:cmp,mx:mx,share:k==='m'&&_hc.met==='loan'};
+}
+function _hcShade(color,v,mx){
+  if(!v||!mx||!/^#[0-9a-f]{6}$/i.test(color))return'';
+  var a=Math.round(Math.min(.5,v.v/mx*.5)*255);return a?'background:'+color+(a<16?'0':'')+a.toString(16)+';':'';
+}
+function _hcHtml(){
+  try{
+    var H=_hcData(),ca=H.first,cb=H.t,cn='ข้อมูล HFNC ที่มี · ตามวันยืม';
+    if(_hc.k==='m'&&H.has){if(_hcYears(H).indexOf(_hc.year)<0)_hc.year=_uaYearOf(H.t,_hc.basis);var cr=_uaYearRange(_hc.year,_hc.basis);ca=cr[0]<H.first?H.first:cr[0];cb=cr[1]>H.t?H.t:cr[1];cn=_hcYL(_hc.year)+' · ตามวันยืม';}
+    var h=_chipLine(H.has?_rngChip(ca,cb,cn):_rngChip('','',''),'margin:-2px 0 8px')
+      +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      +[['m','📊 รายเดือน'],['y','📈 รายปี']].map(function(x){return'<button class="btn '+(_hc.k===x[0]?'bp':'bg')+' sm" style="font-size:11px" onclick="_hcTog(\''+x[0]+'\')">'+x[1]+'</button>';}).join('')
+      +(_hc.k?'':'<span style="font-size:11px;color:var(--mu)">กดเลือกเพื่อแสดงตาราง (กดซ้ำเพื่อซ่อน)</span>')
+    +'</div>';
+    if(!_hc.k)return h;
+    if(!H.has)return h+'<div style="text-align:center;padding:18px;color:var(--mu);font-size:12px">ไม่มีข้อมูล HFNC</div>';
+    var M=_hcModel();
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:10px 0 8px">'
+      +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+        +[['fy','ปีงบประมาณ (ต.ค.–ก.ย.)'],['cal','ปีปฏิทิน (ม.ค.–ธ.ค.)']].map(function(x){return'<button class="btn '+(_hc.basis===x[0]?'bp':'bg')+' sm" style="font-size:11px" onclick="_hcSet(\'basis\',\''+x[0]+'\')">'+x[1]+'</button>';}).join('')
+        +(M.k==='m'?'<select onchange="_hcSet(\'year\',+this.value)" style="width:130px;font-size:12px;padding:3px 6px">'+_hcYears(H).slice().reverse().map(function(Y){return'<option value="'+Y+'"'+(Y===_hc.year?' selected':'')+'>'+_hcYL(Y)+'</option>';}).join('')+'</select>':'')
+        +'<span style="font-size:11px;color:var(--mu);margin-left:6px">แสดงเป็น:</span>'
+        +[['loan','ครั้งที่ยืม'],['avg','เฉลี่ยเครื่องที่ใช้/วัน']].map(function(x){return'<button class="btn '+(_hc.met===x[0]?'bp':'bg')+' sm" style="font-size:11px" onclick="_hcSet(\'met\',\''+x[0]+'\')">'+x[1]+'</button>';}).join('')
+      +'</div>'
+      +'<div style="display:flex;gap:5px"><button class="btn bg sm" style="font-size:11px" onclick="dlPage(\'hfncCmp\',\'csv\')">CSV</button><button class="btn bg sm" style="font-size:11px" onclick="dlPage(\'hfncCmp\',\'xlsx\')">XLS</button><button class="btn bg sm" style="font-size:11px" onclick="_uaPdf(\'hfncCmp\')" title="เปิดหน้าพิมพ์ → บันทึกเป็น PDF">PDF</button></div>'
+    +'</div>';
+    var sticky='position:sticky;left:0;z-index:1;background:var(--s1);';
+    h+='<div style="overflow-x:auto"><table class="dt" style="font-size:11px;white-space:nowrap"><thead><tr><th style="'+sticky+'background:var(--s2)">ยี่ห้อ/รุ่น</th>'
+      +M.cols.map(function(c){return'<th style="text-align:center;'+(c.whole&&M.k==='m'?'color:var(--ac)':'')+'">'+c.label+(c.sub?'<br><span style="font-size:9px;text-transform:none">'+c.sub+'</span>':'')+'</th>';}).join('')
+      +(M.share?'<th style="text-align:center">สัดส่วน</th>':'')
+      +(M.k==='y'?'<th style="text-align:center" title="เทียบ 2 ปีล่าสุดที่ข้อมูลครบทั้งปี">เปลี่ยนแปลง'+(M.cmp?'<br><span style="font-size:9px;text-transform:none">'+M.cols[M.cmp[0]].label+' → '+M.cols[M.cmp[1]].label+'</span>':'')+'</th>':'')
+      +'</tr></thead><tbody>';
+    function td(v,bold,shade){
+      if(!v)return'<td style="text-align:center;color:var(--mu)">—</td>';
+      return'<td style="text-align:center;font-family:var(--mo);'+(bold?'font-weight:700;':'')+(v.full?'color:var(--tx);':'color:var(--wn);')+(shade||'')+'" title="'+v.n+' วัน'+(v.full?'':' (ข้อมูลไม่ครบช่วง)')+'">'+_hcTxt(v)+'</td>';
+    }
+    function hcChgTd(v){if(v===null)return'<td style="text-align:center;color:var(--mu)" title="ต้องมีข้อมูลครบทั้งปีอย่างน้อย 2 ปีจึงเทียบได้">—</td>';return'<td style="text-align:center;color:'+(v>=0?'var(--ok)':'var(--er)')+'">'+(v>=0?'▲ +':'▼ ')+v.toFixed(0)+'%</td>';}
+    M.rows.forEach(function(r){
+      h+='<tr><td style="'+sticky+'font-weight:700;color:'+r.s.color+'"><span style="width:8px;height:8px;border-radius:50%;background:'+r.s.color+';display:inline-block;margin-right:5px"></span>'+esc(r.s.label)+'</td>'
+        +r.vals.map(function(v,i){var w=M.cols[i].whole&&M.k==='m';return td(v,w,w?'':_hcShade(r.s.color,v,M.mx));}).join('')
+        +(M.share?'<td style="text-align:center">'+(r.share===null?'—':r.share+'%')+'</td>':'')
+        +(M.k==='y'?hcChgTd(r.chg):'')+'</tr>';
+    });
+    h+='<tr style="border-top:2px solid var(--bd)"><td style="'+sticky+'font-weight:700;color:var(--ac)">รวมทุกยี่ห้อ</td>'+M.total.map(function(v){return td(v,true,'');}).join('')
+      +(M.share?'<td style="text-align:center;font-weight:700">'+(M.total[M.total.length-1]&&M.total[M.total.length-1].v?'100%':'—')+'</td>':'')
+      +(M.k==='y'?hcChgTd(M.totalChg):'')+'</tr>';
+    h+='</tbody></table></div>'
+      +'<div style="font-size:11px;color:var(--mu);margin-top:6px">'
+        +(_hc.met==='avg'?'ตัวเลข = เฉลี่ยจำนวนเครื่องที่ใช้อยู่ต่อวัน (นับตัวเครื่อง · หารด้วยจำนวนวันตามปฏิทิน · เกณฑ์เดียวกับหัวข้อ 🗓️ การใช้งานเครื่องมือ)':'ตัวเลข = จำนวนครั้งที่ยืม HFNC ของยี่ห้อนั้น (ตามวันยืม · เกณฑ์เดียวกับการ์ด "ยืมทั้งหมด")')
+        +' · <span style="color:var(--wn)">ส้ม *</span> = ข้อมูลไม่ครบช่วง (ก่อนเริ่มมีข้อมูล '+_thShortDate(H.first)+' หรือยังไม่จบเดือน/ปี) · ไม่ขึ้นกับช่องวันที่ของหัวข้อ HFNC set'
+        +(M.k==='y'?' · % เปลี่ยนแปลง แสดงเมื่อมีข้อมูลครบทั้งปีอย่างน้อย 2 ปี':'')
+      +'</div>'
+      +_uaCutNote(H.u,M.cols[0].s);
+    return h;
+  }catch(e){
+    try{console.error('[hfncCmp]',e);}catch(_){}
+    return'<div style="color:var(--er);font-size:12px">แสดงตารางเทียบไม่ได้: '+esc(e&&e.message||String(e))+'</div>';
+  }
+}
+function _hcRender(){var el=document.getElementById('hfncCmpTbl');if(el)el.innerHTML=_hcHtml();}
+function _hcTog(k){_hc.k=_hc.k===k?'':k;_hcRender();}
+function _hcSet(p,v){
+  if(p==='basis'){if(_hc.basis===v)return;_hc.basis=v;_hc.year=_uaYearOf(_hcData().t,v);}
+  else _hc[p]=v;
+  _hcRender();
+}
+function _hcTitle(M){return'เทียบยี่ห้อ/รุ่น HFNC — '+(M.k==='m'?'รายเดือน '+_hcYL(_hc.year):'รายปี')+' · '+(_hc.met==='avg'?'เฉลี่ยเครื่องที่ใช้อยู่/วัน':'ครั้งที่ยืม')+' ('+(_hc.basis==='fy'?'ปีงบประมาณ ต.ค.–ก.ย.':'ปีปฏิทิน ม.ค.–ธ.ค.')+')';}
+function _hcExportRows(){
+  var M=_hcModel(),rows=[];
+  rows.push(['ยี่ห้อ/รุ่น'].concat(M.cols.map(function(c){return c.label;}),M.share?['สัดส่วน %']:[],M.k==='y'?['เปลี่ยนแปลง %']:[]));
+  M.rows.forEach(function(r){rows.push([r.s.label].concat(r.vals.map(_hcTxt),M.share?[r.share===null?'':r.share]:[],M.k==='y'?[r.chg===null?'':r.chg.toFixed(0)]:[]));});
+  var TL=M.total[M.total.length-1];
+  rows.push(['รวมทุกยี่ห้อ'].concat(M.total.map(_hcTxt),M.share?[TL&&TL.v?100:'']:[],M.k==='y'?[M.totalChg===null?'':M.totalChg.toFixed(0)]:[]));
+  rows.push([_hcTitle(M)+' · * = ข้อมูลไม่ครบช่วง']);
+  return rows;
 }
 // ── export (getPageData) ──
 function _uaExportRows(page){
@@ -9793,60 +9937,11 @@ async function renderSum(r){
     +'<div id="hfncSetCont"></div>'
     +'</div>';
 
-  // ── HFNC Set: เทียบยี่ห้อ/รุ่น รายเดือน-รายปี (ตารางเท่านั้น ไม่มีกราฟ) ──
-  window._renderHfncSetMonthly = function(){
-    var cont=document.getElementById('hfncCmpTbl');if(!cont)return;
-    var yrEl=document.getElementById('hfncCmpYear');
-    var _sets=_hfncSetGet();
-    var SET_DEFS=_hfncSetDefs();   // ตัวจับยี่ห้อชุดเดียวกับการ์ด HFNC set
-    // ── รวบรวมปีที่มีข้อมูล HFNC จริง ──
-    var yrsFound={};
-    expanded().forEach(function(item){
-      if(S(item.eq.name)!=='HFNC')return;
-      var ld=item.loan.LoanDate||'';
-      if(ld.length>=4)yrsFound[ld.substring(0,4)]=1;
-    });
-    var yrsList=Object.keys(yrsFound).sort().reverse();
-    if(yrEl&&yrEl.options.length!==yrsList.length){
-      var curYr=yrEl.value;
-      yrEl.innerHTML=yrsList.map(function(y){return'<option value="'+y+'">ปี '+(parseInt(y)+543)+'</option>';}).join('');
-      if(yrsList.indexOf(curYr)!==-1)yrEl.value=curYr;
-    }
-    var yr=(yrEl&&yrEl.value)||yrsList[0]||'';
-    if(!yr){cont.innerHTML='<div style="text-align:center;padding:20px;color:var(--mu);font-size:12px">ไม่มีข้อมูล HFNC</div>';return;}
-    var MO=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-    var counts={};SET_DEFS.forEach(function(s){counts[s.id]=Array(12).fill(0);});
-    var _mS='',_mE='';   // ป้ายช่วงข้อมูลของปีที่เลือก
-    expanded().forEach(function(item){
-      if(S(item.eq.name)!=='HFNC')return;
-      if(!item.borrow)return;
-      if(item.status==='PENDING'||item.status==='CANCELLED')return;
-      var ld=item.loan.LoanDate||'';
-      if(ld.substring(0,4)!==yr)return;
-      var m=parseInt(ld.substring(5,7),10)-1;if(m<0||m>11)return;
-      if(!_mS||ld<_mS)_mS=ld;if(ld>_mE)_mE=ld;
-      var eqNo=S(item.borrow.EquipmentNo).trim();
-      SET_DEFS.forEach(function(s){if(s.match(eqNo))counts[s.id][m]++;});
-    });
-    var rowsHtml=SET_DEFS.map(function(s){
-      var arr=counts[s.id];var total=arr.reduce(function(a,b){return a+b;},0);
-      return'<tr><td style="padding:5px 8px;color:'+s.color+';font-weight:600;white-space:nowrap"><span style="width:8px;height:8px;border-radius:50%;background:'+s.color+';display:inline-block;margin-right:5px"></span>'+esc(s.label)+'</td>'
-        +arr.map(function(v){return'<td style="text-align:center;padding:5px 4px;color:'+(v>0?'var(--tx)':'var(--mu)')+'">'+(v||'—')+'</td>';}).join('')
-        +'<td style="text-align:center;padding:5px 8px;font-weight:700;color:var(--ac)">'+total+'</td></tr>';
-    }).join('');
-    cont.innerHTML=_chipLine(_rngChip(_mS,_mE,'ปี '+(parseInt(yr,10)+543)+' · ตามวันยืม'),'margin:-4px 0 8px')
-      +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap">'
-      +'<thead><tr style="border-bottom:1px solid var(--bd)"><th style="text-align:left;padding:5px 8px;color:var(--mu)">ยี่ห้อ/รุ่น</th>'
-      +MO.map(function(m){return'<th style="text-align:center;padding:5px 4px;color:var(--mu)">'+m+'</th>';}).join('')
-      +'<th style="text-align:center;padding:5px 8px;color:var(--ac)">รวม</th></tr></thead>'
-      +'<tbody>'+rowsHtml+'</tbody></table></div>';
-  };
+  // ── HFNC Set: เทียบยี่ห้อ/รุ่น รายเดือน / รายปี — ตารางซ่อนไว้ กดเลือกจึงแสดง (ตัวคำนวณ _hcModel อยู่นอก renderSum) ──
+  window._renderHfncSetMonthly = function(){_hcRender();};
 
   var _hfncCmpHtml='<div class="card" style="margin-top:12px">'
-    +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
-      +'<div class="ctitle" style="margin:0">📅 เทียบยี่ห้อ/รุ่น รายเดือน (HFNC)</div>'
-      +'<select id="hfncCmpYear" onchange="window._renderHfncSetMonthly&&window._renderHfncSetMonthly()" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--bd);border-radius:4px;color:var(--tx)"></select>'
-    +'</div>'
+    +'<div class="ctitle" style="margin:0 0 8px">📅 เทียบยี่ห้อ/รุ่น รายเดือน / รายปี (HFNC)</div>'
     +'<div id="hfncCmpTbl"></div>'
     +'</div>';
 
@@ -12098,7 +12193,8 @@ function getPageData(page){
     rows.push(['LoanID','วันที่ยืม','ผู้ยืม','แผนก','ผู้ป่วย','เครื่องมือ','หมายเลขเครื่อง','อุปกรณ์ประกอบ','วันที่ใช้','สถานะ','ผู้ให้ยืม','ผู้รับคืน','วันที่คืน','เหตุผลคืน','รายละเอียดเหตุผลคืน','ประวัติโอน']);
     items.forEach(function(item){var ld=item.loan.LoanDate,startD=ld?new Date(ld):null,_mrd=_machineRetDate(item),endD=_mrd?new Date(_mrd):now;var days=startD&&(item.status==='ACTIVE'||item.status==='RETURNED'||item.status==='ACC_PENDING')?Math.max(0,Math.round((endD-startD)/86400000)):'-';var accs=item.borrow&&Array.isArray(item.borrow.Accessories)?item.borrow.Accessories:[];var th=item.borrow&&Array.isArray(item.borrow.TransferHistory)?item.borrow.TransferHistory:[];rows.push([S(item.loan.LoanID),ld||'',S(item.loan.BorrowerName),S(item.loan.DeptName),S(item.loan.PatientName),S(item.eq.name),item.borrow?S(item.borrow.EquipmentNo||''):'-',accs.length||0,days,({PENDING:'รอดำเนินการจ่าย',ACTIVE:'ยืม',RETURNED:'คืน',ACC_PENDING:'คืน (อุปกรณ์ค้าง)',CANCELLED:'ยกเลิก'}[item.status]||item.status),item.borrow?S(item.borrow.GiverName||''):'-',item.borrow?S(item.borrow.ReceiverName||''):'-',item.borrow?(_machineRetDate(item)||S(item.borrow.ReturnDate||'')):'-',item.borrow?S(item.borrow.ReturnRemark||''):'-',item.borrow?S(item.borrow.ReturnDetail||''):'-',th.map(function(t){return t.date+':'+S(t.toDept);}).join('→')]);});
   }else if(page==='daily'){var filter=document.getElementById('dailyFilter').value;var activeItems=exp.filter(function(i){return i.status==='ACTIVE'&&(!filter||S(i.eq.name)===filter);});rows.push(['หมายเลขเครื่อง','ชนิดเครื่องมือ','วันที่ยืม','แผนก','ผู้ป่วย','วันที่ใช้','ผู้ให้ยืม','ประวัติโอน','อุปกรณ์ประกอบ']);activeItems.forEach(function(item){var ld=item.loan.LoanDate||'-',days=ld!=='-'?Math.max(0,Math.round((now-new Date(ld))/86400000)):'-';var th=item.borrow&&item.borrow.TransferHistory?item.borrow.TransferHistory:[];rows.push([item.borrow?S(item.borrow.EquipmentNo||'—'):'—',S(item.eq.name),ld,S(item.loan.DeptName),S(item.loan.PatientName),days,item.borrow?S(item.borrow.GiverName||'-'):'-',th.map(function(t){return S(t.toDept)+'('+t.date+')';}).join('→'),(item.borrow&&item.borrow.Accessories?item.borrow.Accessories.length:0)]);});}
-  else if(page==='uaMonth'||page==='uaDay'||page==='uaCmpM'||page==='uaCmpY'){rows=_uaExportRows(page);}   // หัวข้อการใช้งานรายวัน/เดือน/ปี
+  else if(page==='uaMonth'||page==='uaDay'||page==='uaCmpM'||page==='uaCmpY'){rows=_uaExportRows(page);}
+  else if(page==='hfncCmp'){rows=_hcExportRows();}   // เทียบยี่ห้อ/รุ่น HFNC รายเดือน/รายปี   // หัวข้อการใช้งานรายวัน/เดือน/ปี
   else if(page==='sumAll'){
     // "📋 ข้อมูลการยืมเครื่องมือทั้งหมด" — ตัวกรองเดียวกับหน้าจอ (_secAllFilterItems) ไม่ขึ้นกับ Global Filter
     rows.push(['ชนิดเครื่องมือ','กำลังยืม (ACTIVE)','คืนแล้ว','รอดำเนินการ','ค้างอุปกรณ์','รวมทั้งหมด']);
@@ -12142,8 +12238,8 @@ function dlPage(page,fmt){
   if(!loans){toast('ยังไม่มีข้อมูล','warning');return;}
   var rows=getPageData(page);
   if(!rows||rows.length<=1){toast('ไม่มีข้อมูล','warning');return;}
-  var FNAME={'rec':'บันทึกยืม-คืน-โอน','all':'ข้อมูลทั้งหมด','daily':'สรุปประจำวัน','sum':'สถิติ','sumAll':'สถิติ_ข้อมูลการยืมทั้งหมด','uaMonth':'การใช้งานรายวัน_ในเดือน','uaDay':'เครื่องที่ใช้อยู่_รายวัน','uaCmpM':'เทียบค่าเฉลี่ย_รายเดือน','uaCmpY':'เทียบค่าเฉลี่ย_รายปี','dash':'Dashboard'};
-  var TITLE={'rec':'บันทึกยืม-คืน-โอน','all':'ข้อมูลทั้งหมด','daily':'สรุปรายการยืมประจำวัน','sum':'สถิติการใช้งานเครื่องมือแพทย์','sumAll':'ข้อมูลการยืมเครื่องมือทั้งหมด (หน้าสถิติ)','uaMonth':'การใช้งานเครื่องมือรายวันในเดือน','uaDay':'เครื่องมือที่ใช้อยู่ ณ วันที่','uaCmpM':'เทียบค่าเฉลี่ยเครื่องที่ใช้อยู่/วัน รายเดือน','uaCmpY':'เทียบค่าเฉลี่ยเครื่องที่ใช้อยู่/วัน รายปี','dash':'Dashboard เครื่องมือแพทย์'};
+  var FNAME={'rec':'บันทึกยืม-คืน-โอน','all':'ข้อมูลทั้งหมด','daily':'สรุปประจำวัน','sum':'สถิติ','sumAll':'สถิติ_ข้อมูลการยืมทั้งหมด','uaMonth':'การใช้งานรายวัน_ในเดือน','uaDay':'เครื่องที่ใช้อยู่_รายวัน','uaCmpM':'เทียบค่าเฉลี่ย_รายเดือน','uaCmpY':'เทียบค่าเฉลี่ย_รายปี','hfncCmp':'เทียบยี่ห้อ_HFNC','dash':'Dashboard'};
+  var TITLE={'rec':'บันทึกยืม-คืน-โอน','all':'ข้อมูลทั้งหมด','daily':'สรุปรายการยืมประจำวัน','sum':'สถิติการใช้งานเครื่องมือแพทย์','sumAll':'ข้อมูลการยืมเครื่องมือทั้งหมด (หน้าสถิติ)','uaMonth':'การใช้งานเครื่องมือรายวันในเดือน','uaDay':'เครื่องมือที่ใช้อยู่ ณ วันที่','uaCmpM':'เทียบค่าเฉลี่ยเครื่องที่ใช้อยู่/วัน รายเดือน','uaCmpY':'เทียบค่าเฉลี่ยเครื่องที่ใช้อยู่/วัน รายปี','hfncCmp':'เทียบยี่ห้อ/รุ่น HFNC','dash':'Dashboard เครื่องมือแพทย์'};
   var fname=(FNAME[page]||page)+'_'+new Date().toISOString().split('T')[0];
   var title=TITLE[page]||page;
   if(fmt==='csv'){dlCSV(rows.map(function(r){return r.map(function(c){return'"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n'),fname+'.csv');}
