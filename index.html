@@ -8025,6 +8025,87 @@ function _hcExportRows(){
   rows.push([_hcTitle(M)+' · * = ข้อมูลไม่ครบช่วง']);
   return rows;
 }
+// ── หน้าสถิติ: ปุ่ม CSV / XLS / PDF แยกทุกหัวข้อ (12 ต.ค. 2569) ─────────────────────────────
+// CSV/XLS = ตัวเลขชุดเดียวกับที่แสดง (ข้อมูลที่หัวข้อคำนวณไว้ หรือตารางบนจอ) · ตารางที่แบ่งหน้า (ยืมเกิน 1 เดือน / วันที่ใช้งาน)
+// ส่งออก/พิมพ์ครบทุกแถวตามตัวกรองที่ใช้อยู่ · PDF = หน้าพิมพ์เฉพาะหัวข้อนั้น (ตัวเตรียมหน้าพิมพ์ชุดเดียวกับ "พิมพ์ทั้งหน้า")
+var _SEC_T={eqBar:'รายการยืมแยกตามชนิดเครื่องมือแพทย์ (กำลังยืม)',daySum:'สรุปรวม ยืม-คืน แยกตามชนิดเครื่องมือ',day:'รายการยืม-คืนรายวัน แยกตามชนิดเครื่องมือ',
+  hfncSet:'การใช้ HFNC set แยกตามยี่ห้อ/รุ่น',om:'รายการยืมเกิน 1 เดือน',eqd:'วันที่ใช้งานของเครื่องมือแต่ละเครื่อง',
+  cir:'Ventilator/HFNC ต้องเปลี่ยน Circuit (เกิน 30 วัน)',streak:'เครื่องที่ใช้ต่อเนื่องนาน',dp:'การยืมแยกตามแผนก × ชนิดเครื่องมือ'};
+function _secBtns(k,o){
+  o=o||{};
+  var b=function(f,l){return'<button class="btn bg sm" style="font-size:11px" onclick="event.stopPropagation();dlPage(\'sec_'+k+'\',\''+f+'\')">'+l+'</button>';};
+  return'<div class="sec-exp" style="display:flex;gap:4px;align-items:center;margin-left:auto'+(o.float?';float:right;margin:0 0 4px 8px':'')+'">'
+    +(o.noCsv?'':b('csv','CSV'))+b('xlsx','XLS')
+    +'<button class="btn bg sm" style="font-size:11px" onclick="event.stopPropagation();_secPdf(\''+k+'\')" title="เปิดหน้าพิมพ์เฉพาะหัวข้อนี้ → บันทึกเป็น PDF">PDF</button></div>';
+}
+function _secEl(k){return document.querySelector('#sumCont [data-sec="'+k+'"]');}
+function _secTxt(el){return String(el&&el.textContent||'').replace(/\s+/g,' ').trim();}
+// ตาราง → แถว (ตัดปุ่ม/ช่องกรอก · <br> → " / ")
+function _secTblRows(tbl){
+  var out=[];if(!tbl)return out;
+  [].forEach.call(tbl.rows,function(tr){
+    var r=[].map.call(tr.cells,function(c){
+      var x=c.cloneNode(true);
+      [].slice.call(x.querySelectorAll('button,select,input')).forEach(function(n){n.parentNode.removeChild(n);});
+      [].slice.call(x.querySelectorAll('br')).forEach(function(n){n.parentNode.replaceChild(document.createTextNode(' / '),n);});
+      return _secTxt(x);
+    });
+    if(r.some(function(v){return v!=='';}))out.push(r);
+  });
+  return out;
+}
+function _secRows(k){
+  var el=_secEl(k),rows=[];
+  try{
+    if(k==='eqBar'){
+      var a=window._secEqBar||[];if(!a.length)return[];
+      var t=0;rows.push(['ชนิดเครื่องมือ','กำลังยืม (ACTIVE)']);
+      a.forEach(function(e){rows.push([e[0],e[1]]);t+=e[1];});rows.push(['รวม',t]);
+    }else if(k==='daySum'){
+      var d=window._secDaySum;if(!d||!d.eqs.length)return[];
+      rows.push(['ชนิดเครื่องมือ','ยืม','คืน','ค้าง','เฉลี่ย/วัน']);
+      d.eqs.forEach(function(n){var b=d.b[n]||0;rows.push([n,b,d.r[n]||0,d.p[n]||0,d.nDays>0?(b/d.nDays).toFixed(1):'0']);});
+      rows.push(['รวมทุกชนิด',d.totB,d.totR,d.pend,d.avg]);
+      rows.push(['สูงสุด (ยืม/วัน)',d.maxB,d.maxDate||'']);
+      rows.push(['มีรายการ (วัน) — ใช้หารค่าเฉลี่ย',d.nDays]);
+    }else if(k==='hfncSet'){
+      var H=window._hfncLastSet;if(!H||!H.defs)return[];
+      var tl=0,ta=0,tm=0;H.defs.forEach(function(s){var st=H.stats[s.id];tl+=st.totalLoans;ta+=st.activeNow;tm+=Object.keys(st.machines).length;});
+      if(!tl)return[];
+      rows.push(['ยี่ห้อ/รุ่น','กำลังยืม','ยืมทั้งหมด (ครั้ง)','จำนวนเครื่อง','สัดส่วน %']);
+      H.defs.forEach(function(s){var st=H.stats[s.id];rows.push([s.label,st.activeNow,st.totalLoans,Object.keys(st.machines).length,Math.round(st.totalLoans/tl*100)]);});
+      rows.push(['รวม',ta,tl,tm,100]);
+      rows.push([]);rows.push(['ยี่ห้อ/รุ่น','หมายเลขเครื่อง','ยืม (ครั้ง)','สถานะ','แผนก (กำลังยืม)']);
+      H.defs.forEach(function(s){
+        var m=H.stats[s.id].machines;
+        Object.keys(m).sort(function(a,b){var na=parseInt(a,10),nb=parseInt(b,10);if(!isNaN(na)&&!isNaN(nb))return na-nb;return a.localeCompare(b);})
+          .forEach(function(no){rows.push([s.label,no,m[no].count,m[no].active?'กำลังยืม':'คืนแล้ว',m[no].active?S(m[no].dept):'']);});
+      });
+      var uk=Object.keys(H.unknown||{});if(uk.length)rows.push(['หมายเลขเครื่องที่ไม่อยู่ใน set ใด',uk.join(', ')]);
+    }else if(k==='om'){
+      var f=window._omFiltered?window._omFiltered():[];if(!f.length)return[];
+      rows.push(['LoanID','วันที่ยืม','แผนก','ผู้ป่วย','เครื่องมือ','หมายเลขเครื่อง','จำนวนวัน']);
+      f.forEach(function(r){var el2=r.EquipmentList||[];rows.push([S(r.LoanID),r.LoanDate,S(r.DeptName),S(r.PatientName),el2.map(function(e){return S(e.name);}).join(' / '),el2.map(function(e,i){return(r.EquipNoMap&&r.EquipNoMap[i])?r.EquipNoMap[i]:'-';}).join(' / '),r.days]);});
+    }else if(k==='eqd'){
+      var f2=_eqdFiltered((document.getElementById('eqDaysSearch')||{}).value||'');if(!f2.length)return[];
+      rows.push(['หมายเลขเครื่อง','ชนิดเครื่องมือ','จำนวนครั้งที่ยืม','วันสะสม','เฉลี่ย/ครั้ง (วัน)','สถานะ']);
+      f2.forEach(function(e){rows.push([e[0],e[1].equipName,e[1].loanCount,e[1].days,e[1].loanCount>0?(e[1].days/e[1].loanCount).toFixed(1):'-',e[1].active?'กำลังใช้':'']);});
+    }else if(k==='dp'){
+      rows=window._dpRows?window._dpRows():[];if(rows.length<2)return[];
+    }else{   // day / cir / streak — ตารางของหัวข้อบนหน้าจอ (ไม่แบ่งหน้า แสดงครบ)
+      rows=_secTblRows(el&&el.querySelector('table'));if(rows.length<2)return[];
+    }
+  }catch(e){try{console.error('[secRows]',k,e);}catch(_){}return[];}
+  var chip=el?[].map.call(el.querySelectorAll('.rng-chip'),_secTxt).join(' | '):'';
+  rows.push([]);rows.push(['หัวข้อ: '+_SEC_T[k]+(chip?' · ช่วงข้อมูล: '+chip:'')]);
+  return rows;
+}
+function _secPdf(k){
+  var el=_secEl(k);
+  if(!el){if(typeof toast==='function')toast('ไม่พบหัวข้อนี้ — โหลดหน้าสถิติใหม่','warning');return;}
+  var w=document.createElement('div');w.appendChild(_sfpPrepClone(el));
+  _sfpOpen(w.innerHTML,'📊 '+_SEC_T[k],'ช่วงข้อมูลแสดงใต้ชื่อหัวข้อ (📆 = ช่วงข้อมูล · 🟢 = สถานะ ณ วันที่ออกรายงาน)',_SEC_T[k]);
+}
 // ── export (getPageData) ──
 function _uaExportRows(page){
   var rows=[];
@@ -8081,10 +8162,11 @@ async function renderSum(r){
     }
   });
   var eqArr=Object.entries(eqCount).sort(function(a,b){return b[1]-a[1];});
+  window._secEqBar=eqArr;   // ส่งออก CSV/XLS หัวข้อนี้
   var maxEq=eqArr.length>0?eqArr[0][1]:1;
   var barColors=['#00c8ff','#7c3aed','#10b981','#f59e0b','#ef4444','#06b6d4','#8b5cf6','#34d399','#fbbf24','#f87171','#22d3ee','#a78bfa'];
 
-  var chartHtml='<div class="card"><div class="ctitle" style="margin-bottom:4px">📊 รายการยืมแยกตามชนิดเครื่องมือแพทย์ <span style="font-size:11px;color:var(--ok);font-weight:600;background:rgba(16,185,129,.1);border-radius:4px;padding:1px 7px;text-transform:none;letter-spacing:0">กำลังยืม (ACTIVE)</span></div>'+_chipLine(_snapChip('เครื่องที่กำลังยืม'),'margin:0 0 12px');
+  var chartHtml='<div class="card" data-sec="eqBar">'+_secBtns('eqBar',{float:1})+'<div class="ctitle" style="margin-bottom:4px">📊 รายการยืมแยกตามชนิดเครื่องมือแพทย์ <span style="font-size:11px;color:var(--ok);font-weight:600;background:rgba(16,185,129,.1);border-radius:4px;padding:1px 7px;text-transform:none;letter-spacing:0">กำลังยืม (ACTIVE)</span></div>'+_chipLine(_snapChip('เครื่องที่กำลังยืม'),'margin:0 0 12px');
   if(eqArr.length===0){
     chartHtml+='<div style="text-align:center;padding:20px;color:var(--mu)">ไม่มีข้อมูล</div>';
   }else{
@@ -8166,6 +8248,7 @@ async function renderSum(r){
   var dayList=Object.keys(dayMap).sort().reverse();
 
   // ── day summary cards: grand + per-equipment ──────────────────────────────
+  window._secDaySum=null;
   var _daySumHtml=(function(){
     if(dayList.length===0)return'';
     var _dShow30=dayList.slice(0,30);
@@ -8186,6 +8269,7 @@ async function renderSum(r){
     // "ยังไม่คืน" = จากที่ยืมในช่วงนี้ ยังไม่คืนกี่รายการ (นับสถานะปัจจุบัน)
     // ไม่ใช่ ยืมทั้งหมด-คืนทั้งหมด เพราะ "คืนทั้งหมด" นับรวมของเก่าที่มาคืนวันนี้ด้วย ทำให้ติดลบได้
     var _pending=_totPending;
+    window._secDaySum={eqs:eqNames2.slice(),b:_eqTotB,r:_eqTotR,p:_eqTotPending,totB:_totB,totR:_totR,pend:_pending,avg:_avgDay,maxB:_maxDayB,maxDate:_maxDayDate,nDays:_nDays};   // ส่งออก CSV/XLS
 
     // label ช่วงวันที่ — ใช้ override ของ section นี้เท่านั้น (ไม่อิง Global อีกต่อไป)
     // ป้ายช่วง: ตัวกรองของหัวข้อนี้ (ถ้าเลือก) ไม่งั้นวันแรก–วันสุดท้ายที่มีรายการยืม/คืน
@@ -8209,7 +8293,7 @@ async function renderSum(r){
           +'<span style="font-size:11px;color:var(--mu)">'+_eqLabel+'</span>'+_s2Chip
         +'</div>'
         +'<div style="display:flex;gap:5px;flex-wrap:wrap">'
-          +_qBtn('7 วัน',7)+_qBtn('14 วัน',14)+_qBtn('30 วัน',30)+_clearBtn()
+          +_qBtn('7 วัน',7)+_qBtn('14 วัน',14)+_qBtn('30 วัน',30)+_clearBtn()+_secBtns('daySum')
         +'</div>'
       +'</div>'
       +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:7px">'
@@ -8260,16 +8344,16 @@ async function renderSum(r){
     });
     _eqCards+='</div>';
 
-    return _grandHtml+_eqCards;
+    return'<div data-sec="daySum">'+_grandHtml+_eqCards+'</div>';
   })();
 
   // ── day section: bar chart + collapsible table ──
   var _dayUID='daytbl_'+Math.random().toString(36).substr(2,6);
-  var dayTableHtml='<div class="card">';
+  var dayTableHtml='<div class="card" data-sec="day">';
   dayTableHtml+='<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
     +'<div><div class="ctitle" style="margin:0">📅 รายการยืม-คืนรายวัน แยกตามชนิดเครื่องมือ</div>'
       +_chipLine(dayList.length?_rngChip(dayList[Math.min(29,dayList.length-1)],dayList[0],dayList.length>30?'แสดง 30 วันล่าสุดที่มีรายการ':'มีรายการ '+dayList.length+' วัน'):_rngChip('',''))+'</div>'
-    +'<button id="'+_dayUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_dayUID+'\');var b=document.getElementById(\''+_dayUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
+    +(dayList.length?_secBtns('day'):'')+'<button id="'+_dayUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_dayUID+'\');var b=document.getElementById(\''+_dayUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
     +'</div>';
   if(dayList.length===0){
     dayTableHtml+='<div style="text-align:center;padding:20px;color:var(--mu)">ไม่มีข้อมูล</div>';
@@ -8853,19 +8937,11 @@ async function renderSum(r){
   var _OM_PAGE_SIZE = 20;
   var _omUID='omtbl_'+Math.random().toString(36).substr(2,6);
 
-  // ── ฟังก์ชัน render ตาราง overdue (เรียกซ้ำได้ปลอดภัย) ──
-  window._omRenderTable = function(){
-    var tbody = document.getElementById('omTbody');
-    var pagerEl = document.getElementById('omPager');
-    var countEl = document.getElementById('omCount');
-    if(!tbody) return;
-
-    // อ่านค่า filter ปัจจุบัน
+  // ── ตัวกรอง + แถวตาราง overdue (ใช้ร่วม: ตารางบนจอ / CSV-XLS / หน้าพิมพ์ครบทุกแถว) ──
+  window._omFiltered = function(){
     var q = ((document.getElementById('omSearch')||{}).value||'').toLowerCase().trim();
     var range = ((document.getElementById('omRange')||{}).value)||'all';
-
-    // กรองข้อมูล
-    var filtered = window._omData.filter(function(row){
+    return (window._omData||[]).filter(function(row){
       if(range==='60up' && row.days < 60) return false;
       if(range==='31to59' && (row.days < 31 || row.days >= 60)) return false;
       if(q){
@@ -8874,19 +8950,8 @@ async function renderSum(r){
       }
       return true;
     });
-
-    // pagination
-    var total = filtered.length;
-    var totalPages = Math.max(1, Math.ceil(total / _OM_PAGE_SIZE));
-    if(window._omPage > totalPages) window._omPage = 1;
-    var from = (window._omPage - 1) * _OM_PAGE_SIZE;
-    var pageItems = filtered.slice(from, from + _OM_PAGE_SIZE);
-
-    // render rows
-    if(!pageItems.length){
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--mu);padding:16px">ไม่พบรายการ</td></tr>';
-    } else {
-      tbody.innerHTML = pageItems.map(function(row){
+  };
+  window._omRowHtml = function(row){
         var sk='s_'+S(row.LoanID); _sMap[sk]=row;
         var dC = row.days>=60 ? 'var(--er)' : 'var(--wn)';
         return '<tr>'
@@ -8899,7 +8964,34 @@ async function renderSum(r){
           +'<td style="text-align:center;font-family:var(--mo);font-weight:700;color:'+dC+'">'+row.days+' วัน</td>'
           +'<td style="text-align:center"><button class="abt svb" data-key="'+sk+'" style="border-color:var(--ac);color:var(--ac);font-size:11px">รายละเอียด</button></td>'
           +'</tr>';
-      }).join('');
+  };
+
+  // ── ฟังก์ชัน render ตาราง overdue (เรียกซ้ำได้ปลอดภัย) ──
+  window._omRenderTable = function(){
+    var tbody = document.getElementById('omTbody');
+    var pagerEl = document.getElementById('omPager');
+    var countEl = document.getElementById('omCount');
+    if(!tbody) return;
+
+    // อ่านค่า filter ปัจจุบัน
+    var q = ((document.getElementById('omSearch')||{}).value||'').toLowerCase().trim();
+    var range = ((document.getElementById('omRange')||{}).value)||'all';
+
+    // กรองข้อมูล (ตัวกรองเดียวกับไฟล์ส่งออก/หน้าพิมพ์)
+    var filtered = window._omFiltered();
+
+    // pagination
+    var total = filtered.length;
+    var totalPages = Math.max(1, Math.ceil(total / _OM_PAGE_SIZE));
+    if(window._omPage > totalPages) window._omPage = 1;
+    var from = (window._omPage - 1) * _OM_PAGE_SIZE;
+    var pageItems = filtered.slice(from, from + _OM_PAGE_SIZE);
+
+    // render rows
+    if(!pageItems.length){
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--mu);padding:16px">ไม่พบรายการ</td></tr>';
+    } else {
+      tbody.innerHTML = pageItems.map(window._omRowHtml).join('');
     }
 
     // อัปเดต count
@@ -8961,12 +9053,12 @@ async function renderSum(r){
     }
 
     var noData = overMonthLocal.length===0;
-    window._omHtml='<div class="card">'
+    window._omHtml='<div class="card" data-sec="om">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
         +'<div><div class="ctitle" style="margin:0">⏰ รายการยืมเกิน 1 เดือน <span style="font-size:11px;color:'+(noData?'var(--ok)':'var(--er)')+';font-weight:600;text-transform:none;letter-spacing:0">'+(noData?'ปกติ':overMonthLocal.length+' รายการ')+'</span></div>'+_chipLine(_snapChip('ยืมเกิน 30 วัน ยังไม่คืน'))+'</div>'
         +(!noData
           ?'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
-            +'<button id="'+_omUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_omUID+'\');var b=document.getElementById(\''+_omUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
+            +_secBtns('om')+'<button id="'+_omUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_omUID+'\');var b=document.getElementById(\''+_omUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
           +'</div>'
           :'')
       +'</div>'
@@ -9062,12 +9154,12 @@ async function renderSum(r){
         +'(แสดง '+_eqdShow.length+' อันดับแรก จากทั้งหมด '+totalEq+' เครื่อง)';
     }
 
-    window._eqdHtml='<div class="card">'
+    window._eqdHtml='<div class="card" data-sec="eqd">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
         +'<div><div class="ctitle" style="margin:0">🔢 วันที่ใช้งานของเครื่องมือแต่ละเครื่อง</div>'+_chipLine(_rngChip(_eqdS,_eqdE,'วันยืม → วันคืนตัวเครื่อง/วันนี้'))+'</div>'
         +'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
           +'<span style="font-size:11px;color:var(--mu)">ทั้งหมด '+totalEq+' เครื่อง</span>'
-          +'<button id="'+_eqdUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_eqdUID+'\');var b=document.getElementById(\''+_eqdUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
+          +(totalEq?_secBtns('eqd'):'')+'<button id="'+_eqdUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_eqdUID+'\');var b=document.getElementById(\''+_eqdUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
         +'</div>'
       +'</div>'
       +eqdBars
@@ -9144,10 +9236,10 @@ async function renderSum(r){
         +circuitLocal.map(function(row){var dC=row.days>=45?'var(--er)':'var(--wn)';var urgency=row.days>=45?'🔴':'🟡';return'<tr class="cirow" data-lid="'+row.LoanID+'" style="background:rgba(245,158,11,.04)"><td style="font-family:var(--mo);font-size:11px;color:var(--ac)">'+row.LoanID+'</td><td>'+row.LoanDate+'</td><td><strong>'+esc(row.DeptName)+'</strong></td><td>'+esc(row.PatientName)+'</td><td>'+esc(row.eqName)+'</td><td style="font-family:var(--mo);color:var(--ac)">'+esc(row.eqNo)+'</td><td style="font-family:var(--mo);color:'+dC+';text-align:center;font-weight:700">'+urgency+' '+row.days+' วัน</td><td style="text-align:center"><button class="abt cirbtn" style="border-color:var(--ac);color:var(--ac);font-size:11px">👁 ดู</button></td></tr>';}).join('')
         +'</tbody></table></div>'
       :'<p style="color:var(--ok);text-align:center;padding:14px">✅ ไม่มีรายการที่ต้องเปลี่ยน Circuit ในขณะนี้</p>';
-    window._cirHtml='<div class="card">'
+    window._cirHtml='<div class="card" data-sec="cir">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
         +'<div><div class="ctitle" style="margin:0">🔄 Ventilator/HFNC ต้องเปลี่ยน Circuit (เกิน 30 วัน)'+countBadge+'</div>'+_chipLine(_snapChip('เครื่องที่กำลังยืม'))+'</div>'
-        +(circuitLocal.length?'<button id="'+_cirUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_cirUID+'\');var b=document.getElementById(\''+_cirUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>':'')
+        +(circuitLocal.length?_secBtns('cir'):'')+(circuitLocal.length?'<button id="'+_cirUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_cirUID+'\');var b=document.getElementById(\''+_cirUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>':'')
       +'</div>'
       +cirBars
       +'<div id="'+_cirUID+'" style="display:none">'+cirTable+'</div>'
@@ -9381,11 +9473,11 @@ async function renderSum(r){
     var eqOpts='<option value="">ทุกชนิด</option>'+Object.keys(allExpEqs).sort().map(function(e){return'<option value="'+e+'"'+(window._dpState.eq===e?' selected':'')+'>'+e+'</option>';}).join('');
 
     // ── สร้าง outer HTML (structure คงที่ body render แยก) ──
-    window._dpHtml='<div class="card">'
+    window._dpHtml='<div class="card" data-sec="dp">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
         +'<div><div class="ctitle" style="margin:0">🏥 การยืมแยกตามแผนก × ชนิดเครื่องมือ</div>'+'<div id="'+_dpUID+'_rng" class="rng-chip-line" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div></div>'
         +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
-          +'<button class="btn bg sm" id="'+_dpUID+'_csvbtn" style="font-size:11px">CSV</button>'
+          +'<button class="btn bg sm" id="'+_dpUID+'_csvbtn" style="font-size:11px">CSV</button>'+_secBtns('dp',{noCsv:1})
           +'<button id="'+_dpUID+'_toggle" class="btn bg sm" style="font-size:11px" onclick="(function(){var b=document.getElementById(\''+_dpUID+'_body\');var t=document.getElementById(\''+_dpUID+'_toggle\');if(b.style.display===\'none\'){b.style.display=\'\';t.textContent=\'▲ ซ่อน\';}else{b.style.display=\'none\';t.textContent=\'▼ แสดง\';}})()">▼ แสดง</button>'
         +'</div>'
       +'</div>'
@@ -9407,6 +9499,42 @@ async function renderSum(r){
       +'<div id="'+_dpUID+'_body" style="display:none"><div style="text-align:center;padding:20px;color:var(--mu)"><div class="spin"></div></div></div>'
     +'</div>';
 
+    // แถว pivot วันที่ × แผนก × ชนิด (ตัวกรองของหัวข้อ) — ใช้ร่วม CSV เดิม + XLS
+    window._dpRows=function(){
+      var ds=window._dpState.dateS,de=window._dpState.dateE;
+      var rows=expanded().filter(function(item){
+        if(item.status==='CANCELLED')return false;
+        var ld=item.loan.LoanDate||'';
+        if(!ld||ld<ds||ld>de)return false;
+        if(window._dpState.dept&&S(item.loan.DeptName)!==window._dpState.dept)return false;
+        if(window._dpState.eq&&S(item.eq.name)!==window._dpState.eq)return false;
+        return true;
+      });
+      if(!rows.length)return[];
+      // สร้าง pivot CSV
+      var eqColsC={};rows.forEach(function(i){eqColsC[S(i.eq.name)]=true;});
+      var eqC=Object.keys(eqColsC).sort();
+      var dateMapC={};
+      rows.forEach(function(item){
+        var ld=item.loan.LoanDate,dept=S(item.loan.DeptName)||'ไม่ระบุ',eq=S(item.eq.name)||'ไม่ระบุ';
+        if(!dateMapC[ld])dateMapC[ld]={};
+        if(!dateMapC[ld][dept])dateMapC[ld][dept]={};
+        dateMapC[ld][dept][eq]=(dateMapC[ld][dept][eq]||0)+1;
+      });
+      var header=['วันที่','แผนก'].concat(eqC).concat(['รวม']);
+      var csvRows=[header];
+      Object.keys(dateMapC).sort(function(a,b){return b.localeCompare(a);}).forEach(function(date){
+        Object.keys(dateMapC[date]).forEach(function(dept){
+          var tot=0;
+          var cells=[date,dept];
+          eqC.forEach(function(eq){var v=dateMapC[date][dept][eq]||0;cells.push(v);tot+=v;});
+          cells.push(tot);
+          csvRows.push(cells);
+        });
+      });
+      return csvRows;
+    };
+
     // render ครั้งแรก + ผูก CSV export หลัง DOM พร้อม
     setTimeout(function(){
       window._dpRender&&window._dpRender();
@@ -9415,36 +9543,8 @@ async function renderSum(r){
       if(csvBtn){
         csvBtn.onclick=function(){
           var ds=window._dpState.dateS,de=window._dpState.dateE;
-          var rows=expanded().filter(function(item){
-            if(item.status==='CANCELLED')return false;
-            var ld=item.loan.LoanDate||'';
-            if(!ld||ld<ds||ld>de)return false;
-            if(window._dpState.dept&&S(item.loan.DeptName)!==window._dpState.dept)return false;
-            if(window._dpState.eq&&S(item.eq.name)!==window._dpState.eq)return false;
-            return true;
-          });
-          if(!rows.length){toast('ไม่มีข้อมูล','warning');return;}
-          // สร้าง pivot CSV
-          var eqColsC={};rows.forEach(function(i){eqColsC[S(i.eq.name)]=true;});
-          var eqC=Object.keys(eqColsC).sort();
-          var dateMapC={};
-          rows.forEach(function(item){
-            var ld=item.loan.LoanDate,dept=S(item.loan.DeptName)||'ไม่ระบุ',eq=S(item.eq.name)||'ไม่ระบุ';
-            if(!dateMapC[ld])dateMapC[ld]={};
-            if(!dateMapC[ld][dept])dateMapC[ld][dept]={};
-            dateMapC[ld][dept][eq]=(dateMapC[ld][dept][eq]||0)+1;
-          });
-          var header=['วันที่','แผนก'].concat(eqC).concat(['รวม']);
-          var csvRows=[header];
-          Object.keys(dateMapC).sort(function(a,b){return b.localeCompare(a);}).forEach(function(date){
-            Object.keys(dateMapC[date]).forEach(function(dept){
-              var tot=0;
-              var cells=[date,dept];
-              eqC.forEach(function(eq){var v=dateMapC[date][dept][eq]||0;cells.push(v);tot+=v;});
-              cells.push(tot);
-              csvRows.push(cells);
-            });
-          });
+          var csvRows=window._dpRows();
+          if(!csvRows.length){toast('ไม่มีข้อมูล','warning');return;}
           var csv=csvRows.map(function(r){return r.map(function(c){return'"'+String(c).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
           var blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
           var a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -9666,7 +9766,7 @@ async function renderSum(r){
     }
 
     // ── HTML shell (render ใน setTimeout หลัง DOM พร้อม) ──
-    window._streakHtml='<div class="card">'
+    window._streakHtml='<div class="card" data-sec="streak">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
         +'<div style="display:flex;align-items:center;gap:6px">'
           +'<div class="ctitle" style="margin:0">⏱️ เครื่องที่ใช้ต่อเนื่องนาน</div>'
@@ -9675,7 +9775,7 @@ async function renderSum(r){
         +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
           +'<select id="'+_sUID+'_type" style="font-size:11px;padding:3px 6px;background:var(--bg);border:0.5px solid var(--bd);border-radius:4px;color:var(--tx)" onchange="(function(){var tp=document.getElementById(\''+_sUID+'_type\').value;localStorage.setItem(\'meq_streak_type\',tp);window._streakType=tp;var th=parseInt(document.getElementById(\''+_sUID+'_thresh\').value,10);window[\'_streakRender_'+_sUID+'\'](th);var _b=document.getElementById(\''+_sUID+'_body\');var _t=document.getElementById(\''+_sUID+'_toggle\');if(_b){_b.style.display=\'\';}if(_t){_t.textContent=\'▲ ซ่อน\';}})()"><option value="all"'+(savedType==='all'?' selected':'')+'>ทั้งหมด</option><option value="vent"'+(savedType==='vent'?' selected':'')+'>Ventilator</option><option value="hfnc"'+(savedType==='hfnc'?' selected':'')+'>HFNC</option></select>'
           +'<select id="'+_sUID+'_thresh" style="font-size:11px;padding:3px 6px;background:var(--bg);border:0.5px solid var(--bd);border-radius:4px;color:var(--tx)" onchange="(function(){var v=parseInt(document.getElementById(\''+_sUID+'_thresh\').value,10);localStorage.setItem(\'meq_streak_thresh\',v);window._streakThresh=v;(window[\'_streakRender_'+_sUID+'\']&&window[\'_streakRender_'+_sUID+'\'](v));var _b2=document.getElementById(\''+_sUID+'_body\');var _t2=document.getElementById(\''+_sUID+'_toggle\');if(_b2){_b2.style.display=\'\';}if(_t2){_t2.textContent=\'▲ ซ่อน\';}})()"><option value="25"'+(savedThresh===25?' selected':'')+'>เกิน 25 วัน</option><option value="30"'+(savedThresh===30?' selected':'')+'>เกิน 30 วัน</option></select>'
-          +'<button id="'+_sUID+'_toggle" class="btn bg sm" style="font-size:11px" onclick="(function(){var b=document.getElementById(\''+_sUID+'_body\');var t=document.getElementById(\''+_sUID+'_toggle\');if(b.style.display===\'none\'){b.style.display=\'\';t.textContent=\'▲ ซ่อน\';}else{b.style.display=\'none\';t.textContent=\'▼ แสดง\';}})()">▼ แสดง</button>'
+          +_secBtns('streak')+'<button id="'+_sUID+'_toggle" class="btn bg sm" style="font-size:11px" onclick="(function(){var b=document.getElementById(\''+_sUID+'_body\');var t=document.getElementById(\''+_sUID+'_toggle\');if(b.style.display===\'none\'){b.style.display=\'\';t.textContent=\'▲ ซ่อน\';}else{b.style.display=\'none\';t.textContent=\'▼ แสดง\';}})()">▼ แสดง</button>'
         +'</div>'
       +'</div>'
       +_chipLine(_rngChip(cutoffStr,localDateStr(now),'ตามวันยืม · ย้อนหลัง 5 เดือน'),'margin:-4px 0 6px')
@@ -9869,7 +9969,8 @@ async function renderSum(r){
 
     return{
       cards:cards,donutSvg:donutSvg,legend:legend,machineGrids:machineGrids,
-      unknownHtml:unknownHtml,totalLoans:totalLoans,totalActive:totalActive,filterLabel:filterLabel
+      unknownHtml:unknownHtml,totalLoans:totalLoans,totalActive:totalActive,filterLabel:filterLabel,
+      stats:setStats,defs:SET_DEFS,unknown:unknownMachines
     };
   };
 
@@ -9880,6 +9981,7 @@ async function renderSum(r){
     var de=(document.getElementById('hfncDateE')||{}).value||'';
     var detailOpen=document.getElementById('hfncDetailPane')&&document.getElementById('hfncDetailPane').style.display!=='none';
     var r=window._buildHfncSetHtml(ds,de);
+    window._hfncLastSet={stats:r.stats,defs:r.defs,unknown:r.unknown};   // ส่งออก CSV/XLS (ตัวเลขชุดเดียวกับการ์ด)
     // ป้ายช่วงข้อมูล — เกณฑ์เดียวกับ _buildHfncSetHtml (HFNC, มีบันทึกยืม, ไม่ใช่รอบันทึก/ยกเลิก, ตามวันยืม)
     var _hS='',_hE='';
     expanded().forEach(function(item){
@@ -9914,12 +10016,12 @@ async function renderSum(r){
     if(btn)btn.textContent=detailOpen?'▲ ซ่อนรายละเอียด':'▼ ดูรายละเอียด';
   };
 
-  var _hfncSetHtml='<div class="card">'
+  var _hfncSetHtml='<div class="card" data-sec="hfncSet">'
     +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
       +'<div><div class="ctitle" style="margin:0">💨 การใช้ HFNC set แยกตามยี่ห้อ/รุ่น'
         +'<span style="font-size:10px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0;margin-left:8px">ไม่รวม HFNC transfer</span>'
       +'</div>'+'<div id="hfncRngChip" class="rng-chip-line" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div></div>'
-      +'<button id="hfncDetailBtn" onclick="(function(){var p=document.getElementById(\'hfncDetailPane\');var b=document.getElementById(\'hfncDetailBtn\');if(p&&p.style.display===\'none\'){p.style.display=\'block\';b.textContent=\'▲ ซ่อนรายละเอียด\';}else if(p){p.style.display=\'none\';b.textContent=\'▼ ดูรายละเอียด\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูรายละเอียด</button>'
+      +_secBtns('hfncSet')+'<button id="hfncDetailBtn" onclick="(function(){var p=document.getElementById(\'hfncDetailPane\');var b=document.getElementById(\'hfncDetailBtn\');if(p&&p.style.display===\'none\'){p.style.display=\'block\';b.textContent=\'▲ ซ่อนรายละเอียด\';}else if(p){p.style.display=\'none\';b.textContent=\'▼ ดูรายละเอียด\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูรายละเอียด</button>'
     +'</div>'
     // ── filter bar ──
     +'<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--s2);border-radius:6px;border:1px solid var(--bd)">'
@@ -10364,10 +10466,8 @@ function filterEqDays(q){
   var ql=(q||'').toLowerCase().trim();
   var _EQD_PAGE_SIZE=30;
 
-  // กรอง
-  var filtered=window._eqdData.filter(function(e){
-    return !ql || e[0].toLowerCase().includes(ql) || (e[1].equipName||'').toLowerCase().includes(ql);
-  });
+  // กรอง (ตัวกรองเดียวกับไฟล์ส่งออก/หน้าพิมพ์)
+  var filtered=_eqdFiltered(ql);
 
   // reset หน้า 1 เมื่อ search เปลี่ยน
   if(typeof window._eqdLastQ==='undefined') window._eqdLastQ='';
@@ -10382,18 +10482,7 @@ function filterEqDays(q){
   // render tbody
   var tbody=document.getElementById('eqDaysTbody');
   if(tbody){
-    tbody.innerHTML=pageItems.map(function(e){
-      var avg=e[1].loanCount>0?(e[1].days/e[1].loanCount).toFixed(1):'-';
-      var dayColor=e[1].days>30?'var(--er)':e[1].days>14?'var(--wn)':'var(--ok)';
-      var activeBadge=e[1].active?'<span style="font-size:9px;background:rgba(16,185,129,.15);color:var(--ok);border:1px solid rgba(16,185,129,.3);border-radius:3px;padding:1px 4px;margin-left:3px">กำลังใช้</span>':'';
-      return'<tr>'
-        +'<td style="font-family:var(--mo);color:var(--ac);font-weight:700">'+e[0]+activeBadge+'</td>'
-        +'<td>'+e[1].equipName+'</td>'
-        +'<td style="text-align:center;font-family:var(--mo)">'+e[1].loanCount+'</td>'
-        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;color:'+dayColor+'">'+e[1].days+'</td>'
-        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu)">'+avg+'</td>'
-        +'</tr>';
-    }).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mu);padding:14px">ไม่พบรายการ</td></tr>';
+    tbody.innerHTML=pageItems.map(_eqdRowHtml).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mu);padding:14px">ไม่พบรายการ</td></tr>';
   }
 
   // อัปเดต count
@@ -10414,6 +10503,25 @@ function filterEqDays(q){
     btns+='</div>';
     pagerEl.innerHTML=btns;
   }
+}
+// ตัวกรอง + แถวตาราง "วันที่ใช้งานของเครื่องมือ" (ใช้ร่วม: ตารางบนจอ / CSV-XLS / หน้าพิมพ์ครบทุกแถว)
+function _eqdFiltered(q){
+  var ql=(q||'').toLowerCase().trim();
+  return (window._eqdData||[]).filter(function(e){
+    return !ql || e[0].toLowerCase().includes(ql) || (e[1].equipName||'').toLowerCase().includes(ql);
+  });
+}
+function _eqdRowHtml(e){
+      var avg=e[1].loanCount>0?(e[1].days/e[1].loanCount).toFixed(1):'-';
+      var dayColor=e[1].days>30?'var(--er)':e[1].days>14?'var(--wn)':'var(--ok)';
+      var activeBadge=e[1].active?'<span style="font-size:9px;background:rgba(16,185,129,.15);color:var(--ok);border:1px solid rgba(16,185,129,.3);border-radius:3px;padding:1px 4px;margin-left:3px">กำลังใช้</span>':'';
+      return'<tr>'
+        +'<td style="font-family:var(--mo);color:var(--ac);font-weight:700">'+e[0]+activeBadge+'</td>'
+        +'<td>'+e[1].equipName+'</td>'
+        +'<td style="text-align:center;font-family:var(--mo)">'+e[1].loanCount+'</td>'
+        +'<td style="text-align:center;font-family:var(--mo);font-weight:700;color:'+dayColor+'">'+e[1].days+'</td>'
+        +'<td style="text-align:center;font-family:var(--mo);color:var(--mu)">'+avg+'</td>'
+        +'</tr>';
 }
 function filterAllByEq(eqName){showPg('all',document.querySelectorAll('.nt')[4]);setTimeout(function(){var sel=document.getElementById('allEq');if(sel){sel.value=eqName;renderAll();}},100);}
 function filterAllByDate(dateStr){showPg('all',document.querySelectorAll('.nt')[4]);setTimeout(function(){var ds=document.getElementById('allDateS');var de=document.getElementById('allDateE');if(ds)ds.value=dateStr;if(de)de.value=dateStr;renderAll();},100);}
@@ -12067,7 +12175,7 @@ function _patchHfncSetMatcher(sets){
     }).join('');
     var unknownKeys=Object.keys(unknownMachines);
     var unknownHtml=unknownKeys.length?'<div style="margin-top:10px;padding:8px 12px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:6px;font-size:11px;color:var(--mu)">⚠️ ไม่อยู่ใน set ใด: '+unknownKeys.map(function(k){return'<span style="font-family:var(--mo);background:rgba(239,68,68,.1);padding:1px 5px;border-radius:3px;color:var(--er)">'+esc(k)+'</span>';}).join(' ')+'</div>':'';
-    return{cards:cards,donutSvg:donutSvg,legend:legend,machineGrids:machineGrids,unknownHtml:unknownHtml,totalLoans:totalLoans,totalActive:totalActive,filterLabel:''};
+    return{cards:cards,donutSvg:donutSvg,legend:legend,machineGrids:machineGrids,unknownHtml:unknownHtml,totalLoans:totalLoans,totalActive:totalActive,filterLabel:'',stats:setStats,defs:SET_DEFS,unknown:unknownMachines};
   };
 }
 
@@ -12194,7 +12302,8 @@ function getPageData(page){
     items.forEach(function(item){var ld=item.loan.LoanDate,startD=ld?new Date(ld):null,_mrd=_machineRetDate(item),endD=_mrd?new Date(_mrd):now;var days=startD&&(item.status==='ACTIVE'||item.status==='RETURNED'||item.status==='ACC_PENDING')?Math.max(0,Math.round((endD-startD)/86400000)):'-';var accs=item.borrow&&Array.isArray(item.borrow.Accessories)?item.borrow.Accessories:[];var th=item.borrow&&Array.isArray(item.borrow.TransferHistory)?item.borrow.TransferHistory:[];rows.push([S(item.loan.LoanID),ld||'',S(item.loan.BorrowerName),S(item.loan.DeptName),S(item.loan.PatientName),S(item.eq.name),item.borrow?S(item.borrow.EquipmentNo||''):'-',accs.length||0,days,({PENDING:'รอดำเนินการจ่าย',ACTIVE:'ยืม',RETURNED:'คืน',ACC_PENDING:'คืน (อุปกรณ์ค้าง)',CANCELLED:'ยกเลิก'}[item.status]||item.status),item.borrow?S(item.borrow.GiverName||''):'-',item.borrow?S(item.borrow.ReceiverName||''):'-',item.borrow?(_machineRetDate(item)||S(item.borrow.ReturnDate||'')):'-',item.borrow?S(item.borrow.ReturnRemark||''):'-',item.borrow?S(item.borrow.ReturnDetail||''):'-',th.map(function(t){return t.date+':'+S(t.toDept);}).join('→')]);});
   }else if(page==='daily'){var filter=document.getElementById('dailyFilter').value;var activeItems=exp.filter(function(i){return i.status==='ACTIVE'&&(!filter||S(i.eq.name)===filter);});rows.push(['หมายเลขเครื่อง','ชนิดเครื่องมือ','วันที่ยืม','แผนก','ผู้ป่วย','วันที่ใช้','ผู้ให้ยืม','ประวัติโอน','อุปกรณ์ประกอบ']);activeItems.forEach(function(item){var ld=item.loan.LoanDate||'-',days=ld!=='-'?Math.max(0,Math.round((now-new Date(ld))/86400000)):'-';var th=item.borrow&&item.borrow.TransferHistory?item.borrow.TransferHistory:[];rows.push([item.borrow?S(item.borrow.EquipmentNo||'—'):'—',S(item.eq.name),ld,S(item.loan.DeptName),S(item.loan.PatientName),days,item.borrow?S(item.borrow.GiverName||'-'):'-',th.map(function(t){return S(t.toDept)+'('+t.date+')';}).join('→'),(item.borrow&&item.borrow.Accessories?item.borrow.Accessories.length:0)]);});}
   else if(page==='uaMonth'||page==='uaDay'||page==='uaCmpM'||page==='uaCmpY'){rows=_uaExportRows(page);}
-  else if(page==='hfncCmp'){rows=_hcExportRows();}   // เทียบยี่ห้อ/รุ่น HFNC รายเดือน/รายปี   // หัวข้อการใช้งานรายวัน/เดือน/ปี
+  else if(page==='hfncCmp'){rows=_hcExportRows();}
+  else if(page.indexOf('sec_')===0&&_SEC_T[page.slice(4)]){rows=_secRows(page.slice(4));}   // ปุ่ม CSV/XLS รายหัวข้อหน้าสถิติ   // เทียบยี่ห้อ/รุ่น HFNC รายเดือน/รายปี   // หัวข้อการใช้งานรายวัน/เดือน/ปี
   else if(page==='sumAll'){
     // "📋 ข้อมูลการยืมเครื่องมือทั้งหมด" — ตัวกรองเดียวกับหน้าจอ (_secAllFilterItems) ไม่ขึ้นกับ Global Filter
     rows.push(['ชนิดเครื่องมือ','กำลังยืม (ACTIVE)','คืนแล้ว','รอดำเนินการ','ค้างอุปกรณ์','รวมทั้งหมด']);
@@ -12240,8 +12349,9 @@ function dlPage(page,fmt){
   if(!rows||rows.length<=1){toast('ไม่มีข้อมูล','warning');return;}
   var FNAME={'rec':'บันทึกยืม-คืน-โอน','all':'ข้อมูลทั้งหมด','daily':'สรุปประจำวัน','sum':'สถิติ','sumAll':'สถิติ_ข้อมูลการยืมทั้งหมด','uaMonth':'การใช้งานรายวัน_ในเดือน','uaDay':'เครื่องที่ใช้อยู่_รายวัน','uaCmpM':'เทียบค่าเฉลี่ย_รายเดือน','uaCmpY':'เทียบค่าเฉลี่ย_รายปี','hfncCmp':'เทียบยี่ห้อ_HFNC','dash':'Dashboard'};
   var TITLE={'rec':'บันทึกยืม-คืน-โอน','all':'ข้อมูลทั้งหมด','daily':'สรุปรายการยืมประจำวัน','sum':'สถิติการใช้งานเครื่องมือแพทย์','sumAll':'ข้อมูลการยืมเครื่องมือทั้งหมด (หน้าสถิติ)','uaMonth':'การใช้งานเครื่องมือรายวันในเดือน','uaDay':'เครื่องมือที่ใช้อยู่ ณ วันที่','uaCmpM':'เทียบค่าเฉลี่ยเครื่องที่ใช้อยู่/วัน รายเดือน','uaCmpY':'เทียบค่าเฉลี่ยเครื่องที่ใช้อยู่/วัน รายปี','hfncCmp':'เทียบยี่ห้อ/รุ่น HFNC','dash':'Dashboard เครื่องมือแพทย์'};
-  var fname=(FNAME[page]||page)+'_'+new Date().toISOString().split('T')[0];
-  var title=TITLE[page]||page;
+  var _secK=page.indexOf('sec_')===0?page.slice(4):'';   // รายหัวข้อหน้าสถิติ
+  var fname=(FNAME[page]||(_secK&&_SEC_T[_secK]?('สถิติ_'+_SEC_T[_secK]).replace(/[\\/:*?"<>|×()]/g,' ').replace(/\s+/g,'_'):page))+'_'+new Date().toISOString().split('T')[0];
+  var title=TITLE[page]||(_secK&&_SEC_T[_secK])||page;
   if(fmt==='csv'){dlCSV(rows.map(function(r){return r.map(function(c){return'"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n'),fname+'.csv');}
   else if(fmt==='xlsx'||fmt==='xls'){
     var xml='<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="h"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1a1a2e" ss:Pattern="Solid"/></Style></Styles><Worksheet ss:Name="ข้อมูล"><Table>'+rows.map(function(row,ri){return'<Row>'+row.map(function(cell){var v=String(cell==null?'':cell).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');var isNum=v!==''&&!isNaN(v)&&ri>0;if(ri===0)return'<Cell ss:StyleID="h"><Data ss:Type="String">'+v+'</Data></Cell>';if(isNum)return'<Cell><Data ss:Type="Number">'+v+'</Data></Cell>';return'<Cell><Data ss:Type="String">'+v+'</Data></Cell>';}).join('')+'</Row>';}).join('')+'</Table></Worksheet></Workbook>';
@@ -12344,46 +12454,120 @@ function _sfpCanvasToImg(liveRoot,cloneRoot){
       var img=document.createElement('img');
       img.src=cv.toDataURL('image/png');
       img.style.maxWidth='100%';
-      if(cv.width)img.width=cv.width;
-      if(cv.height)img.height=cv.height;
+      // ขนาดตามที่เห็นบนจอ (ไม่ใช่ขนาด pixel จริงของ canvas ที่อาจ x2 ตามความละเอียดจอ)
+      if(cv.clientWidth){img.style.width=cv.clientWidth+'px';img.style.height='auto';}
+      else{if(cv.width)img.width=cv.width;if(cv.height)img.height=cv.height;}
       cc.parentNode.replaceChild(img,cc);
     }catch(e){/* canvas ว่าง/ยังไม่วาด — เว้นไว้ ไม่ทำให้รายงานพัง */}
   });
 }
-window._sumFullPagePrint=function(){
-  var src=document.getElementById('sumCont');
-  if(!src||!src.innerHTML){if(window.toast)toast('ยังไม่มีข้อมูล — กด "🔍 ดู" เพื่อโหลดข้อมูลก่อน','warning');return;}
+// ── หน้าพิมพ์ไม่ตัดกลางชิ้น (12 ต.ค. 2569) — วัดความสูงจากหน้าจอจริงก่อน clone:
+// หัวข้อ (การ์ด) ที่สั้น → รวมก้อนอยู่หน้าเดียว · หัวข้อยาว → แยกหน้าได้ แต่ชิ้นย่อยในกริด/flex (การ์ดชนิดเครื่องมือ,
+// การ์ดยี่ห้อ, กล่องตัวเลข) ไม่ถูกตัดกลาง · หัวหัวข้อไม่ค้างท้ายหน้า (ดู CSS ใน _sfpOpen)
+var _SFP_KEEP_SEC=420,_SFP_KEEP_ITEM=300;   // px บนจอ (หน้าพิมพ์ A4 แนวนอนแคบกว่าจอ เนื้อหาสูงขึ้นราว 1.3 เท่า)
+function _sfpMarkKeep(src,clone){
+  var L=src.querySelectorAll('*'),C=clone.querySelectorAll('*');
+  if(L.length!==C.length)return;
+  function sec(el){return el.classList.contains('card')||el.hasAttribute('data-sec');}
+  if(sec(src)&&src.offsetHeight&&src.offsetHeight<=_SFP_KEEP_SEC)clone.classList.add('sfp-keep');
+  var disp=new Map();
+  for(var i=0;i<L.length;i++){
+    var el=L[i],h=el.offsetHeight;if(!h)continue;
+    if(sec(el)){if(h<=_SFP_KEEP_SEC)C[i].classList.add('sfp-keep');continue;}
+    if(h>_SFP_KEEP_ITEM||el.tagName==='TABLE'||el.tagName==='TBODY'||el.tagName==='TR')continue;
+    var p=el.parentElement;if(!p)continue;
+    var d=disp.get(p);if(d===undefined){d=getComputedStyle(p).display;disp.set(p,d);}
+    if(d==='grid'||d==='inline-grid'||d==='flex'||d==='inline-flex')C[i].classList.add('sfp-keep');
+  }
+}
+// หัวหัวข้อ (ชื่อ + ป้ายช่วงข้อมูล) ติดไปกับเนื้อหาถัดไป
+function _sfpMarkHeads(clone){
+  [].forEach.call(clone.querySelectorAll('.ctitle'),function(t){
+    var n=t;
+    while(n.parentElement&&n.parentElement!==clone&&!n.parentElement.classList.contains('card')&&!n.parentElement.hasAttribute('data-sec'))n=n.parentElement;
+    if(n!==clone)n.classList.add('sfp-head');
+  });
+}
+// ตารางที่แบ่งหน้าบนจอ → หน้าพิมพ์แสดงครบทุกแถวตามตัวกรองที่ใช้อยู่
+function _sfpFillFull(clone){
+  try{
+    var ot=clone.querySelector('#omTbody');
+    if(ot&&window._omFiltered&&window._omRowHtml){
+      var f=window._omFiltered();
+      ot.innerHTML=f.map(window._omRowHtml).join('')||'<tr><td colspan="8" style="text-align:center">ไม่พบรายการ</td></tr>';
+      var op=clone.querySelector('#omPager');if(op)op.innerHTML='<div style="font-size:11px;color:var(--mu);padding:4px 0">ทั้งหมด '+f.length+' รายการ</div>';
+    }
+    var et=clone.querySelector('#eqDaysTbody');
+    if(et&&window._eqdData){
+      var f2=_eqdFiltered((document.getElementById('eqDaysSearch')||{}).value||'');
+      et.innerHTML=f2.map(_eqdRowHtml).join('')||'<tr><td colspan="5" style="text-align:center">ไม่พบรายการ</td></tr>';
+      var ep=clone.querySelector('#eqdPager');if(ep)ep.innerHTML='';
+      var ec=clone.querySelector('#eqDaysCount');if(ec)ec.textContent='ทั้งหมด '+f2.length+' เครื่อง';
+    }
+    // ตารางเทียบยี่ห้อ HFNC ที่ซ่อนอยู่ → ใส่ตารางรายเดือน (ตัวเลือกปี/ฐาน/ค่า ตามที่ตั้งไว้)
+    var hc=clone.querySelector('#hfncCmpTbl');
+    if(hc&&typeof _hcHtml==='function'&&!_hc.k){_hc.k='m';try{hc.innerHTML=_hcHtml();}finally{_hc.k='';}}
+  }catch(e){try{console.error('[sfpFillFull]',e);}catch(_){}}
+}
+// เตรียม clone สำหรับพิมพ์ (ทั้งหน้า หรือเฉพาะหัวข้อ) — ไม่แตะ DOM บนจอ
+function _sfpPrepClone(src){
   var clone=src.cloneNode(true);
+  _sfpMarkKeep(src,clone);       // ต้องทำก่อนเปลี่ยนโครงสร้าง clone (จับคู่ตามลำดับ element)
+  _sfpMarkHeads(clone);
   _sfpCanvasToImg(src,clone);
+  _sfpFillFull(clone);
   // เปิดส่วนที่พับ/ซ่อนอยู่ (display:none) ให้แสดงครบในรายงาน เพราะผู้ใช้ต้องการ
   // "ทุกฟีเจอร์" ไม่ใช่แค่ส่วนที่กางอยู่ตอนกดพิมพ์
   clone.querySelectorAll('[style*="display:none"],[style*="display: none"]').forEach(function(el){el.style.display='';});
+  if(clone.style&&/display:\s*none/.test(clone.getAttribute('style')||''))clone.style.display='';
   // ซ่อนปุ่ม/ตัวควบคุม interactive ที่ไม่มีประโยชน์ตอนพิมพ์ (กรอง/เรียง/ตัวกรองย่อย)
   clone.querySelectorAll('button,select,input').forEach(function(el){el.style.display='none';});
+  // กราฟ SVG กว้างเกินหน้ากระดาษ → ย่อตามสัดส่วนให้พอดีหน้า (ไม่ถูกตัดขอบขวา)
+  clone.querySelectorAll('svg[width][height]').forEach(function(sv){
+    var w=parseFloat(sv.getAttribute('width')),h=parseFloat(sv.getAttribute('height'));
+    if(!sv.getAttribute('viewBox')&&w>0&&h>0)sv.setAttribute('viewBox','0 0 '+w+' '+h);
+  });
+  return clone;
+}
+function _sfpOpen(bodyHtml,h2,note,docTitle){
   var css=':root{--bg:#fff;--s1:#f9fafb;--s2:#f3f4f6;--bd:#e5e7eb;--tx:#111827;--mu:#6b7280;'
     +'--ac:#0284c7;--ac2:#7c3aed;--ok:#15803d;--wn:#b45309;--er:#dc2626;'
     +'--fn:"Sarabun",sans-serif;--mo:"IBM Plex Mono",monospace}'
-    +'*{box-sizing:border-box}body{font-family:var(--fn);background:#fff;color:#111827;padding:20px 24px;font-size:12px}'
-    +'.card{border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:16px;background:#fff;page-break-inside:avoid}'
-    +'table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:4px 7px;font-size:10.5px}'
+    +'*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-family:var(--fn);background:#fff;color:#111827;padding:20px 24px;font-size:12px}'
+    +'.card{border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:16px;background:#fff}'
+    +'.card,[data-sec]{break-inside:auto;page-break-inside:auto}'
+    +'.sfp-keep{break-inside:avoid;page-break-inside:avoid}'
+    +'.sfp-head{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}'
+    +'tr,img,svg,.rng-chip-line{break-inside:avoid;page-break-inside:avoid}thead{display:table-header-group}'
+    +'table{border-collapse:collapse;width:100%;max-width:100%}th,td{border:1px solid #ddd;padding:4px 7px;font-size:10.5px;white-space:normal!important}'
     +'th{background:#f3f4f6}'
+    +'svg{max-width:100%;height:auto}'
+    // กล่องเลื่อน (overflow:auto / ความสูงจำกัด) บนจอ → หน้าพิมพ์แสดงเนื้อหาครบ ไม่ถูกตัด
+    +'.dtw,[style*="overflow-x:auto"],[style*="overflow-x: auto"],[style*="overflow:auto"],[style*="overflow: auto"],[style*="overflow-y:auto"],[style*="overflow-y: auto"]{overflow:visible!important}'
+    +'[style*="max-height"]{max-height:none!important}[style*="sticky"]{position:static!important}'
     +'.ctitle{font-weight:700}'
     +'@media print{.no-print{display:none}@page{size:A4 landscape;margin:12mm}}';
   var head='<div style="margin-bottom:16px">'
-    +'<h2 style="margin:0 0 4px;font-size:18px">📊 รายงานสรุปหน้าสถิติ — ครบทุกฟีเจอร์</h2>'
-    +'<div style="font-size:11px;color:#666">ช่วงข้อมูลของแต่ละหัวข้อแสดงใต้ชื่อหัวข้อ (📆 = ช่วงข้อมูล · 🟢 = สถานะ ณ วันที่ออกรายงาน)</div>'
+    +'<h2 style="margin:0 0 4px;font-size:18px">'+h2+'</h2>'
+    +'<div style="font-size:11px;color:#666">'+note+'</div>'
     +'<div style="font-size:11px;color:#666">ออกรายงาน: '+new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})+'</div>'
     +'</div>';
   var html='<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">'
     +'<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">'
-    +'<style>'+css+'</style><title>รายงานสรุปหน้าสถิติ</title></head><body>'
-    +head+clone.innerHTML
+    +'<style>'+css+'</style><title>'+esc(docTitle)+'</title></head><body>'
+    +head+bodyHtml
     +'<div class="no-print" style="position:fixed;bottom:16px;right:16px">'
     +'<button onclick="window.print()" style="padding:10px 20px;background:#0284c7;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;font-family:Sarabun,sans-serif">🖨️ พิมพ์ / บันทึก PDF</button>'
     +'</div></body></html>';
   var win=window.open('','_blank','width=1300,height=850,scrollbars=yes');
   if(!win){alert('กรุณาอนุญาต popup');return;}
   win.document.write(html);win.document.close();
+}
+window._sumFullPagePrint=function(){
+  var src=document.getElementById('sumCont');
+  if(!src||!src.innerHTML){if(window.toast)toast('ยังไม่มีข้อมูล — กด "🔍 ดู" เพื่อโหลดข้อมูลก่อน','warning');return;}
+  var clone=_sfpPrepClone(src);
+  _sfpOpen(clone.innerHTML,'📊 รายงานสรุปหน้าสถิติ — ครบทุกฟีเจอร์','ช่วงข้อมูลของแต่ละหัวข้อแสดงใต้ชื่อหัวข้อ (📆 = ช่วงข้อมูล · 🟢 = สถานะ ณ วันที่ออกรายงาน)','รายงานสรุปหน้าสถิติ');
 };
 function showPg(page,el){
   document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
