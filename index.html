@@ -16579,5 +16579,66 @@ function changePIN(type){
 }
 
 </script>
+<script>
+/* §SEC-INFO — คำอธิบาย "ข้อมูลมาจากไหน/นับอย่างไร" ของแต่ละหัวข้อในหน้าสถิติ
+   แสดงผลอย่างเดียว: ฉีดปุ่ม ℹ️ ท้ายชื่อหัวข้อ + แผงคำอธิบาย (ซ่อนไว้ก่อน) ผ่าน MutationObserver
+   ไม่อ่าน/เขียนข้อมูล ไม่แตะโค้ดคำนวณ ไม่มี query ใหม่ · ล้มเหลวเงียบ ไม่กระทบหน้าอื่น */
+(function(){
+  try{
+    var SRC='ข้อมูลจากใบยืม (loan_requests) + บันทึกยืม (borrow_records) ที่โหลดอยู่ในหน้านี้ — ใบที่ยังไม่คืน + คืน/ยกเลิกย้อนหลัง 1 ปี · ใบที่ archive แล้วไม่รวม';
+    var I={
+      eqBar:{n:'นับเฉพาะตัวเครื่องที่ยังไม่คืน แยกตามชนิดเครื่องมือ · "คืน (อุปกรณ์ค้าง)" ไม่นับเป็นเครื่องที่ยังใช้อยู่ (ยึดตัวเครื่องเป็นหลัก)'},
+      ua:{n:'นับตัวเครื่องที่จ่ายแล้ว (ไม่นับใบรอบันทึก/ยกเลิก) ว่าใช้อยู่ตั้งแต่วันยืมถึงวันคืนตัวเครื่อง · "คืน (อุปกรณ์ค้าง)" เลิกนับตั้งแต่วันคืนตัวเครื่อง',f:'เฉลี่ย/วัน = รวมจำนวนเครื่องที่ใช้ทุกวัน ÷ จำนวนวันตามปฏิทิน (ตัดช่วงก่อนมีข้อมูลและหลังวันนี้)',l:'วันในอนาคตเป็น "คาดการณ์ขั้นต่ำ" (เฉพาะเครื่องที่ยังยืมอยู่) · ช่วงเก่ากว่า 1 ปีต้องกด "โหลดข้อมูลเต็ม"'},
+      daySum:{n:'วันที่มีเฉพาะใบรอบันทึก/ยกเลิก ไม่นับเป็น "วันที่มีรายการ" · ยอดคืนนับตามวันคืนตัวเครื่อง (ไม่ใช่วันที่คืนอุปกรณ์)',f:'ค่าเฉลี่ยหารด้วยจำนวนวันที่มีรายการ (ดูป้ายช่วงข้อมูลใต้ชื่อหัวข้อ)',l:'ตามช่วงวันที่ของหัวข้อนี้เอง (ปุ่ม 7/14/30 วัน) ไม่ขึ้นกับตัวกรองรวม'},
+      day:{n:'ยอดยืม/คืนรายวันแยกตามชนิดเครื่องมือ · ยอดคืนนับตามวันคืนตัวเครื่อง',l:'แสดง 30 วันล่าสุดที่มีรายการ'},
+      avg:{n:'นับเครื่องที่ใช้อยู่แต่ละวัน (ชุดคำนวณเดียวกับหัวข้อ 🗓️ การใช้งานเครื่องมือ) · "วันนี้" ไม่นับเครื่องที่คืนแล้วแต่อุปกรณ์ค้าง',f:'AVG/วัน = รวมจำนวนเครื่องที่ใช้ ÷ จำนวนวันตามปฏิทิน (นับรวมวันที่ไม่มีเครื่องใช้ = 0) · Utilization % อิงค่าเฉลี่ยนี้',l:'ป้ายใต้ชื่อบอก "มีเครื่องใช้งาน N วัน" จากช่วงทั้งหมด'},
+      om:{n:'ใบที่ยังมีตัวเครื่องไม่คืน (สถานะ ACTIVE) และยืมเกิน 1 เดือน · ไม่นับใบรอบันทึก/คืนครบแล้ว',f:'จำนวนวัน = วันยืม → วันนี้ · 🟡 31–59 วัน · 🔴 ≥ 60 วัน',l:'แสดง ณ วันนี้ ไม่ขึ้นกับช่วงวันที่'},
+      eqd:{n:'จำนวนวันใช้งานสะสมต่อเครื่อง นับจากวันยืม → วันคืนตัวเครื่อง (ถ้ายังไม่คืนนับถึงวันนี้)',f:'ป้าย "กำลังใช้" = ตัวเครื่องยังไม่คืน (อุปกรณ์ค้างไม่นับ)'},
+      cir:{n:'เฉพาะ Ventilator, Ventilator transfer, HFNC, HFNC transfer ที่กำลังยืมอยู่ และยืมเกิน 30 วัน (ควรเปลี่ยน Circuit)',f:'จำนวนวัน = วันยืม → วันนี้ · 🟡 31–44 วัน · 🔴 ≥ 45 วัน',l:'แสดง ณ วันนี้'},
+      dp:{n:'นับจำนวนเครื่องแยกตามวันยืม × แผนก × ชนิดเครื่องมือ (1 เครื่อง = 1 รายการ)',l:'ใช้วันยืมเป็นเกณฑ์ ตามช่วงวันที่ที่เลือกในหัวข้อนี้'},
+      streak:{n:'หาเครื่องที่ถูกใช้ต่อเนื่องเกินเกณฑ์วันที่ตั้งไว้ในการ์ด ย้อนหลัง 5 เดือน (ตามวันยืม)',f:'🟡 ต่ำกว่า 45 วัน · 🔴 ≥ 45 วัน',l:'ไม่รวมช่วงที่เก่ากว่า 5 เดือน'},
+      all:{n:'รายการยืมทุกสถานะตามช่วงวันยืมที่เลือก · ปุ่ม CSV/XLS/PDF ของหัวข้อนี้ไม่นับใบยกเลิก',f:'จำนวนวัน = วันยืม → วันคืนตัวเครื่อง (ถ้ายังไม่คืนนับถึงวันนี้)',l:'หมวด "อุปกรณ์ค้าง" แสดงแยก ไม่รวมในการนับตัวเครื่อง'},
+      hfncSet:{n:'จับกลุ่มยี่ห้อ/รุ่นจากช่วงเลขเครื่องที่ตั้งใน Admin → 💨 HFNC Set (ตัดช่องว่าง ไม่สนตัวพิมพ์เล็ก/ใหญ่) · "ยืมทั้งหมด" นับทุกครั้ง · "กำลังยืม" = ตัวเครื่องยังไม่คืน',l:'เพิ่มเครื่องใหม่ต้องเพิ่มเลขในช่วงของ Admin มิฉะนั้นไม่ถูกจัดเข้ายี่ห้อ'},
+      hfncCmp:{n:'เทียบยี่ห้อ/รุ่น HFNC รายเดือน/รายปี (ปีงบ ต.ค.–ก.ย. หรือปีปฏิทิน) · "ครั้งที่ยืม" ใช้เกณฑ์เดียวกับ "ยืมทั้งหมด" ของ HFNC set',f:'"เฉลี่ย/วัน" = ระเบียนชุดเดียวกับหัวข้อ 🗓️ การใช้งานเครื่องมือ',l:'เทียบเต็มเดือน/เต็มปี ไม่ขึ้นกับช่องวันที่ของหัวข้อ HFNC set'}
+    };
+    var T=[['การใช้งานเครื่องมือ รายวัน','ua'],['รายการยืมแยกตามชนิดเครื่องมือแพทย์','eqBar'],['รายการยืม-คืนรายวัน','day'],['ค่าเฉลี่ย On Loan','avg'],['รายการยืมเกิน 1 เดือน','om'],['วันที่ใช้งานของเครื่องมือแต่ละเครื่อง','eqd'],['ต้องเปลี่ยน Circuit','cir'],['การยืมแยกตามแผนก','dp'],['เครื่องที่ใช้ต่อเนื่องนาน','streak'],['ข้อมูลการยืมเครื่องมือทั้งหมด','all'],['การใช้ HFNC set','hfncSet'],['เทียบยี่ห้อ/รุ่น รายเดือน','hfncCmp']];
+    function keyOf(t){
+      var s=t.closest('[data-sec]'),k=s&&s.getAttribute('data-sec');
+      if(k==='daySum'&&s.querySelector('.ctitle')===t)return k;
+      var x=t.textContent||'';
+      for(var i=0;i<T.length;i++)if(x.indexOf(T[i][0])>=0)return T[i][1];
+      return null;
+    }
+    function panel(k){
+      var d=I[k],h=function(a,b){return b?'<div><b>'+a+'</b> '+b+'</div>':'';};
+      return '<div class="sec-info-panel" data-k="'+k+'" style="display:none;margin:6px 0 10px;padding:8px 10px;font-size:11px;line-height:1.6;color:var(--tx);background:rgba(0,200,255,.06);border:1px solid rgba(0,200,255,.3);border-radius:6px">'
+        +h('📥 ที่มา:',SRC)+h('🔢 นับอย่างไร:',d.n)+h('➗ สูตร/เกณฑ์:',d.f)+h('⚠️ ข้อจำกัด:',d.l)+'</div>';
+    }
+    window._secInfoToggle=function(b){
+      var k=b.getAttribute('data-k'),p=document.querySelector('#sumCont .sec-info-panel[data-k="'+k+'"]');
+      if(!p)return;var o=p.style.display==='none';p.style.display=o?'':'none';b.setAttribute('aria-expanded',o?'true':'false');
+    };
+    function inject(){
+      var root=document.getElementById('sumCont');if(!root)return;
+      [].forEach.call(root.querySelectorAll('.ctitle'),function(t){
+        if(t.querySelector('.sec-info-btn'))return;
+        var k=keyOf(t);if(!k||!I[k])return;
+        if(root.querySelector('.sec-info-btn[data-k="'+k+'"]'))return;   // 1 หัวข้อ = 1 ปุ่ม
+        var n=t;while(n.parentElement&&!n.parentElement.classList.contains('card')&&!n.parentElement.hasAttribute('data-sec')&&n.parentElement!==root)n=n.parentElement;
+        var b=document.createElement('button');b.type='button';b.className='btn bg sm sec-info-btn';b.setAttribute('data-k',k);b.setAttribute('aria-expanded','false');
+        b.title='ดูที่มาและวิธีนับของตัวเลขในหัวข้อนี้';b.style.cssText='font-size:11px;padding:1px 7px;text-transform:none;letter-spacing:0';b.textContent='ℹ️ ที่มาข้อมูล';
+        b.onclick=function(e){e.stopPropagation();window._secInfoToggle(b);};
+        t.appendChild(b);
+        n.insertAdjacentHTML('afterend',panel(k));
+      });
+    }
+    var tm=null,root=document.getElementById('sumCont');
+    if(root&&window.MutationObserver){
+      new MutationObserver(function(){clearTimeout(tm);tm=setTimeout(function(){try{inject();}catch(e){console.warn('secInfo:',e.message);}},60);}).observe(root,{childList:true,subtree:true});
+      inject();
+    }
+  }catch(e){console.warn('secInfo init:',e.message);}
+})();
+</script>
 </body>
 </html>
