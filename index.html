@@ -16640,5 +16640,111 @@ function changePIN(type){
   }catch(e){console.warn('secInfo init:',e.message);}
 })();
 </script>
+<script>
+/* §SWL-CMP — Admin › ภาระงานเจ้าหน้าที่: ตารางสรุปเปรียบเทียบ รายเดือน / รายปีงบประมาณ (ต.ค.–ก.ย.)
+   ใช้ _swlBuildEvents() ตัวเดิม (กติกานับเดียวกับตารางหลัก: ยืม/คืน/โอน) · อ่านอย่างเดียว ไม่เขียนข้อมูล
+   ดึงประวัติเต็มผ่าน _swlEnsureFull() เดิมเมื่อจำเป็น (ครั้งเดียวต่อการเปิดแอป เก็บใน _swlFull ไม่ทับ loans/borrows) */
+(function(){
+  try{
+    var MN=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    var FYM=[10,11,12,1,2,3,4,5,6,7,8,9];
+    var TY=[['give','ยืม','#3b82f6'],['ret','คืน','#10b981'],['tr','โอน','#f59e0b']];
+    var $=function(i){return document.getElementById(i);};
+    function fyOf(d){var y=+d.slice(0,4),m=+d.slice(5,7);return (m>=10?y+1:y)+543;}   // ปีงบประมาณ พ.ศ. (ต.ค. ปีนี้ – ก.ย. ปีหน้า = ปีหน้า)
+    function fyS(be){return (be-544)+'-10-01';}
+    function fyE(be){return (be-543)+'-09-30';}
+    var seq=0;
+    function card(){
+      var now=fyOf(_swlToday()),op='';
+      for(var i=0;i<6;i++)op+='<option value="'+(now-i)+'">ปีงบประมาณ '+(now-i)+(i===0?' (ปัจจุบัน)':'')+'</option>';
+      var sel='padding:6px 8px;background:var(--bg);border:1px solid var(--bd);border-radius:5px;color:var(--tx);font-size:13px';
+      return '<div class="ctitle">📊 สรุปเปรียบเทียบ รายเดือน / รายปีงบประมาณ <span style="font-size:11px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0">(ปีงบประมาณ 1 ต.ค. – 30 ก.ย.)</span></div>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">'
+        +'<select id="swlCmpView" style="'+sel+'" onchange="_swlCmpRender()"><option value="month">รายเดือน (ในปีงบประมาณที่เลือก)</option><option value="year">รายปีงบประมาณ (เทียบหลายปี)</option></select>'
+        +'<select id="swlCmpFy" style="'+sel+'" onchange="_swlCmpRender()">'+op+'</select>'
+        +'<select id="swlCmpMet" style="'+sel+'" onchange="_swlCmpRender()"><option value="all">แสดง: รวมทุกงาน</option><option value="give">แสดง: ยืม</option><option value="ret">แสดง: คืน</option><option value="tr">แสดง: โอน</option></select></div>'
+        +'<div id="swlCmpMsg" style="font-size:12px;min-height:16px;margin-bottom:6px;color:var(--mu)"></div>'
+        +'<div id="swlCmpOut" style="overflow-x:auto"></div>'
+        +'<div style="font-size:11px;color:var(--mu);margin-top:8px;line-height:1.6">ℹ️ นับด้วยกติกาเดียวกับตารางด้านบน: ยืม = วันที่กดบันทึกจ่าย · คืน = วันคืนตัวเครื่อง (ผู้รับคืนตามที่ระบบเก็บ) · โอน = วันที่โอน · งานที่ไม่มีวันที่ไม่ถูกนับ · ปีงบประมาณปัจจุบันนับถึงวันนี้ (ยังไม่ครบปี)</div>';
+    }
+    window._swlCmpRender=async function(){
+      var msg=$('swlCmpMsg'),out=$('swlCmpOut');if(!msg||!out)return;
+      var my=++seq;
+      if(typeof loans==='undefined'||loans===null||borrows===null){msg.textContent='⏳ กำลังโหลดข้อมูลยืม-คืน...';return;}
+      var view=$('swlCmpView').value,met=$('swlCmpMet').value,fy=+$('swlCmpFy').value;
+      $('swlCmpFy').style.display=view==='month'?'':'none';
+      msg.textContent='';
+      if(!_swlFull&&(view==='year'||fyS(fy)<_swlCoveredFrom())){
+        msg.textContent='⏳ ต้องใช้ข้อมูลย้อนหลังเพิ่ม กำลังดึงจากฐานข้อมูล (ครั้งเดียวต่อการเปิดแอป)...';
+        try{await _swlEnsureFull();}catch(e){if(my===seq)msg.textContent='ดึงข้อมูลย้อนหลังไม่สำเร็จ: '+e.message;return;}
+        if(my!==seq)return;msg.textContent='';
+      }
+      var src=_swlFull||{loans:loans,borrows:borrows};
+      var ev=_swlBuildEvents(src.loans,src.borrows).events,noDate=0,cols=[],keyOf,inR;
+      if(view==='month'){
+        cols=FYM.map(function(m){return{k:m,l:MN[m-1]};});
+        inR=function(d){return d>=fyS(fy)&&d<=fyE(fy);};keyOf=function(d){return +d.slice(5,7);};
+      }else{
+        var set={};ev.forEach(function(e){if(e.date)set[fyOf(e.date)]=1;});
+        cols=Object.keys(set).map(Number).sort(function(a,b){return a-b;}).map(function(y){return{k:y,l:'ปีงบ '+y+(y===fyOf(_swlToday())?'*':'')};});
+        inR=function(){return true;};keyOf=fyOf;
+      }
+      var per={};(STAFF||[]).forEach(function(s){if(s&&s!=='อื่นๆ'){per[_swlName(s)]={};}});
+      var colTot={};cols.forEach(function(c){colTot[c.k]={give:0,ret:0,tr:0};});
+      ev.forEach(function(e){
+        if(!e.date){noDate++;return;}
+        if(!inR(e.date))return;
+        var k=keyOf(e.date);if(!colTot[k])return;
+        var p=per[e.staff]||(per[e.staff]={});var c=p[k]||(p[k]={give:0,ret:0,tr:0});
+        c[e.type]++;colTot[k][e.type]++;
+      });
+      var val=function(c){return !c?0:(met==='all'?c.give+c.ret+c.tr:c[met]);};
+      var rows=Object.keys(per).map(function(n){var t=0;cols.forEach(function(c){t+=val(per[n][c.k]);});return{n:n,t:t};});
+      rows.sort(function(a,b){if((a.n===_SWL_NONAME)!==(b.n===_SWL_NONAME))return a.n===_SWL_NONAME?1:-1;if(b.t!==a.t)return b.t-a.t;return a.n.localeCompare(b.n,'th');});
+      var th='padding:7px 8px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--mu);font-weight:700;text-align:right;white-space:nowrap';
+      var td='padding:6px 8px;border-bottom:1px solid var(--bd);font-size:13px;text-align:right';
+      var num=function(v,st){return '<td style="'+td+(st||'')+(v?'':';color:var(--mu)')+'">'+(v||'–')+'</td>';};
+      var h='<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+';text-align:left">เจ้าหน้าที่</th>'
+        +cols.map(function(c){return '<th style="'+th+'">'+esc(c.l)+'</th>';}).join('')+'<th style="'+th+'">รวม</th></tr></thead><tbody>';
+      if(!rows.length||!cols.length)h+='<tr><td colspan="'+(cols.length+2)+'" style="'+td+';text-align:center;color:var(--mu)">ไม่มีข้อมูล</td></tr>';
+      rows.forEach(function(r){
+        h+='<tr><td style="'+td+';text-align:left'+(r.n===_SWL_NONAME?';color:var(--mu)':'')+'">'+esc(r.n)+'</td>'
+          +cols.map(function(c){return num(val(per[r.n][c.k]));}).join('')+num(r.t,';font-weight:700')+'</tr>';
+      });
+      var tt={give:0,ret:0,tr:0},bd='border-top:2px solid var(--bd);';
+      cols.forEach(function(c){TY.forEach(function(t){tt[t[0]]+=colTot[c.k][t[0]];});});
+      TY.forEach(function(t,i){
+        h+='<tr><td style="'+td+';text-align:left;'+(i===0?bd:'')+'font-weight:700;color:'+t[2]+'">รวม'+t[1]+'</td>'
+          +cols.map(function(c){return num(colTot[c.k][t[0]],';'+(i===0?bd:''));}).join('')+num(tt[t[0]],';font-weight:700;'+(i===0?bd:''))+'</tr>';
+      });
+      var gT=function(c){return c.give+c.ret+c.tr;};
+      h+='<tr><td style="'+td+';text-align:left;font-weight:700">รวมทุกงาน</td>'+cols.map(function(c){return num(gT(colTot[c.k]),';font-weight:700');}).join('')+num(tt.give+tt.ret+tt.tr,';font-weight:700')+'</tr>';
+      if(view==='year'&&cols.length>1){
+        h+='<tr><td style="'+td+';text-align:left;color:var(--mu)">เทียบปีก่อน</td><td style="'+td+'"></td>'
+          +cols.slice(1).map(function(c,i){var a=gT(colTot[cols[i].k]),b=gT(colTot[c.k]);
+            if(!a)return '<td style="'+td+';color:var(--mu)">–</td>';
+            var p=Math.round((b-a)/a*100);return '<td style="'+td+';color:'+(p>0?'var(--ok,#10b981)':p<0?'var(--er)':'var(--mu)')+'">'+(p>0?'+':'')+p+'%</td>';}).join('')+'<td style="'+td+'"></td></tr>';
+      }
+      h+='</tbody></table>';
+      out.innerHTML=h;
+      var n=[];if(view==='year')n.push('* ปีงบประมาณปัจจุบัน นับถึงวันนี้ ยังไม่ครบปี — % เทียบปีก่อนจึงอาจต่ำกว่าจริง');
+      if(noDate)n.push('⚠️ มี '+noDate+' รายการที่ไม่มีวันที่ในระบบ (ไม่ถูกนับ)');
+      if(_swlFull)n.unshift('📦 รวมข้อมูลย้อนหลังทั้งหมด (รวม Archive) แล้ว');
+      msg.innerHTML=n.map(esc).join('<br>');
+    };
+    function ensure(){
+      var p=$('adm-staffwork-mgr');if(!p)return;
+      if(!$('swlCmp')){var c=document.createElement('div');c.className='card';c.id='swlCmp';c.innerHTML=card();p.appendChild(c);}
+      window._swlCmpRender();
+    }
+    var o=window.showAdminTab;
+    window.showAdminTab=function(id){
+      var r=o?o.apply(this,arguments):undefined;
+      if(id==='staffwork-mgr'){try{ensure();}catch(e){console.warn('swlCmp:',e.message);}}
+      return r;
+    };
+  }catch(e){console.warn('swlCmp init:',e.message);}
+})();
+</script>
 </body>
 </html>
