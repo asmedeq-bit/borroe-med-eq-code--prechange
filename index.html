@@ -5782,7 +5782,7 @@ function _injectErrorLogTab(){
 // เหมือนเดิมโดยไม่กระทบการทำงาน (loadConfig/saveConfig จะ fail แบบเงียบๆ)
 // ════════════════════════════════════════════════════════════
 var _CFG_TABLE='app_settings';
-var _CFG_KEYS=['depts','eql','accs','staff','eqnums','retremarks','inventory','hfncset','dept_disabled','eql_disabled','retremarks_disabled','retremarks_needdetail','circuit_alert','new_loan_alert','pf_layout_prefs','loan_form_visible'];
+var _CFG_KEYS=['depts','eql','accs','staff','eqnums','retremarks','inventory','hfncset','hfnc_rules','dept_disabled','eql_disabled','retremarks_disabled','retremarks_needdetail','circuit_alert','new_loan_alert','pf_layout_prefs','loan_form_visible'];
 
 async function loadConfig(){
   try{
@@ -7269,12 +7269,7 @@ function updateDash(){
 
   // HFNC data
   var HFNC_EQL=['HFNC','HFNC transfer'];
-  var HFNC_BUILDINGS={
-    'อาคาร 14 ชั้น':['14/9.','14/8.','14/7.','อญ','อช'],
-    'อาคารเชิดบุญเมือง':['MICU'],
-    'อาคาร 100 ปี':['100/9','100/6'],
-    'อาคาร 80 พรรษา':['80/10','80/9','80/8','ศช','ศญ','80/5','PICU','80/1']
-  };
+  var _HC=_hfncCfg();var HFNC_BUILDINGS=_HC.map;   // §HFNC-RULES: อาคาร→แผนก มาจากค่าตั้งใน Admin (ไม่ตั้ง=ค่าเริ่มต้น)
   var hfncItems=activeItems.filter(function(i){return HFNC_EQL.some(function(n){return S(i.eq.name)===n;});});
   var bC={},dC={};
   hfncItems.forEach(function(i){
@@ -7282,11 +7277,10 @@ function updateDash(){
     dC[dept]=(dC[dept]||0)+1;
     for(var b in HFNC_BUILDINGS){if(HFNC_BUILDINGS[b].indexOf(dept)>=0)bC[b]=(bC[b]||0)+1;}
   });
-  var wbList=['อาคาร 14 ชั้น','อาคาร 100 ปี','อาคาร 80 พรรษา','อาคารเชิดบุญเมือง'];
-  var hfncTotal=wbList.reduce(function(s,b){return s+(bC[b]||0);},0);
-  var LIMIT_100=30,LIMIT_ALL=65;
-  var b100=bC['อาคาร 100 ปี']||0;
-  var warn100=b100>LIMIT_100,warnAll=hfncTotal>LIMIT_ALL;
+  var _HR=_hfncEval(_HC,bC);   // ผลแต่ละชุดเกณฑ์: {name,limit,n,over,...}
+  var hfncTotal=Object.keys(bC).reduce(function(s,k){return s+bC[k];},0);   // รวมทุกจุดจ่ายที่จัดอาคารแล้ว (ดูภาพรวม)
+  var _hfncUnm=hfncItems.filter(function(i){return !_hfncBldOf(_HC,S(i.loan.DeptName));});   // HFNC ที่แผนกไม่อยู่ในอาคารใด
+  var warnAny=_HR.some(function(r){return r.over;});
 
   // dept table
   var deptMap={};
@@ -7314,7 +7308,7 @@ function updateDash(){
   var mB=Math.max.apply(null,bE.map(function(e){return e[1];}).concat([1]));
 
   // ── render stats cards ──
-  var warnHtml=warnAll?'<div class="hwarn"><span style="font-size:20px">⚠️</span><div><strong style="color:var(--er)">แจ้งเตือน HFNC</strong><br><span style="font-size:12px">ยอดรวม = <strong>'+hfncTotal+'</strong> เครื่อง — เกินเกณฑ์ 65!</span></div></div>':'';
+  var warnHtml=_hfncTopWarn(_HR);
   var statsHtml=warnHtml+'<div class="sgrid">'
     +'<div class="sc scy"><div class="snum" style="color:var(--ac)">'+activeItems.length+'</div><div class="slbl">กำลังยืม</div></div>'
     +'<div class="sc syw"><div class="snum" style="color:var(--wn)">'+pendingCount+'</div><div class="slbl">รอดำเนินการ</div></div>'
@@ -7354,13 +7348,11 @@ function updateDash(){
 
   // ── HFNC section ──
   var warnBanners='';
-  if(warnAll){warnBanners+='<div class="hwarn"><span style="font-size:22px">🚨</span><div><strong style="color:var(--er);font-size:14px">แจ้งเตือนด่วน!</strong><br><span style="font-size:13px">รวมทุกอาคาร = <strong style="color:var(--er);font-size:16px">'+hfncTotal+'</strong> เครื่อง <strong style="color:var(--er)">เกินเกณฑ์ '+LIMIT_ALL+' เครื่อง!</strong></span></div></div>';}
-  if(warn100){warnBanners+='<div style="background:rgba(239,68,68,.08);border:1px solid var(--er);border-radius:7px;padding:10px;display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:22px">⚠️</span><div><strong style="color:var(--er);font-size:13px">แจ้งเตือน อาคาร 100 ปี</strong><br><span style="font-size:12px">HFNC อาคาร 100 ปี = <strong style="color:var(--er)">'+b100+'</strong> เครื่อง — เกินเกณฑ์ '+LIMIT_100+' เครื่อง!</span></div></div>';}
-  if(!warnAll&&!warn100){warnBanners='<div style="background:rgba(16,185,129,.08);border:1px solid var(--ok);border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;gap:8px;align-items:center"><span style="font-size:18px">✅</span><div style="font-size:13px">ยอดรวม HFNC ทุกอาคาร = <strong style="color:var(--ok)">'+hfncTotal+'</strong> เครื่อง — ปกติ</div></div>';}
+  warnBanners=_hfncBannersHtml(_HR,hfncTotal);
   var hfncHtml='<div class="card"><div class="ctitle">📊 รายงานการใช้งาน HFNC</div>'
     +warnBanners
     +'<div class="sgrid" style="margin-bottom:12px">'
-    +'<div class="sc '+(warnAll?'srd':'scy')+'"><div class="snum" style="color:'+(warnAll?'var(--er)':'var(--ac)')+'">'+hfncTotal+'</div><div class="slbl">HFNC รวมทุกอาคาร</div><div style="font-size:10px;color:'+(warnAll?'var(--er)':'var(--mu)')+'">เกณฑ์สูงสุด '+LIMIT_ALL+' เครื่อง</div></div>'
+    +'<div class="sc '+(warnAny?'srd':'scy')+'"><div class="snum" style="color:'+(warnAny?'var(--er)':'var(--ac)')+'">'+hfncTotal+'</div><div class="slbl">HFNC รวมทุกจุดจ่าย</div><div style="font-size:10px;color:var(--mu)">ดูเกณฑ์ในกล่องด้านล่าง</div></div>'
     +(maxDept?'<div class="sc sgn"><div class="snum" style="color:var(--ok);font-size:17px">'+esc(maxDept[0])+'</div><div class="slbl">ใช้สูงสุด ('+maxDept[1]+')</div></div>':'')
     +(minDept&&minDept!==maxDept?'<div class="sc spu"><div class="snum" style="color:var(--ac2);font-size:17px">'+esc(minDept[0])+'</div><div class="slbl">ใช้ต่ำสุด ('+minDept[1]+')</div></div>':'')
     +'</div>'
@@ -7368,19 +7360,18 @@ function updateDash(){
     +'<div><div style="font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase;margin-bottom:7px;letter-spacing:.5px">🏢 HFNC ตามอาคาร</div>'
     +'<div class="bwrap">'
     +bE.map(function(e){
-      var isWb=wbList.indexOf(e[0])>=0,is100=e[0]==='อาคาร 100 ปี';
-      var overLimit=(is100&&e[1]>LIMIT_100)||(isWb&&warnAll);
+      var _bi=_hfncBarInfo(_HC,_HR,e[0]),isWb=_bi.wb;
+      var overLimit=_bi.over;
       var barColor=overLimit?'var(--er)':(isWb?'var(--wn)':'var(--ac)');
       var valColor=overLimit?'var(--er)':(isWb?'var(--wn)':'var(--tx)');
-      var limitTxt=is100?' /'+LIMIT_100:'';
-      return'<div class="brow"><div class="blbl" title="'+e[0]+'">'+e[0]+'</div><div class="btrk"><div class="bfil" style="width:'+(e[1]/mB*100)+'%;background:'+barColor+'"></div></div><div class="bval" style="color:'+valColor+'">'+e[1]+limitTxt+'</div>'+(overLimit?'<span style="font-size:10px;color:var(--er);margin-left:3px">⚠️</span>':'')+'</div>';
+      var limitTxt=_bi.lim;
+      return'<div class="brow"><div class="blbl" title="'+esc(e[0])+'">'+esc(e[0])+'</div><div class="btrk"><div class="bfil" style="width:'+(e[1]/mB*100)+'%;background:'+barColor+'"></div></div><div class="bval" style="color:'+valColor+'">'+e[1]+limitTxt+'</div>'+(overLimit?'<span style="font-size:10px;color:var(--er);margin-left:3px">⚠️</span>':'')+'</div>';
     }).join('')
     +(bE.length===0?'<div style="color:var(--mu);font-size:12px;padding:8px">ไม่มีข้อมูล HFNC</div>':'')
     +'</div>'
     +'<div style="margin-top:8px;padding:8px 10px;background:var(--s2);border-radius:5px;font-size:12px;line-height:1.8">'
     +'<div style="color:var(--mu);font-weight:700;margin-bottom:4px;font-size:10px;text-transform:uppercase;letter-spacing:.4px">เกณฑ์การใช้งาน HFNC</div>'
-    +'<div>🏥 อาคาร 100 ปี ใช้ได้ไม่เกิน <strong style="color:'+(warn100?'var(--er)':'var(--wn)')+'">'+LIMIT_100+' เครื่อง</strong>'+(warn100?' <span style="color:var(--er);font-weight:700">⚠️ เกิน!</span>':' <span style="color:var(--ok)">✓</span>')+'</div>'
-    +'<div>🏢 รวม 4 อาคาร ไม่เกิน <strong style="color:'+(warnAll?'var(--er)':'var(--wn)')+'">'+LIMIT_ALL+' เครื่อง</strong>'+(warnAll?' <span style="color:var(--er);font-weight:700">⚠️ เกิน!</span>':' <span style="color:var(--ok)">✓ ปัจจุบัน '+hfncTotal+' เครื่อง</span>')+'</div>'
+    +_hfncCriteriaBody(_HC,_HR,bC,_hfncUnm,hfncTotal)
     +'</div></div>'
     +'<div><div style="font-size:10px;color:var(--mu);font-weight:700;text-transform:uppercase;margin-bottom:7px;letter-spacing:.5px">🏥 HFNC ตามหอผู้ป่วย</div>'
     +'<div class="bwrap">'+dE.map(function(e){return'<div class="brow"><div class="blbl">'+esc(e[0])+'</div><div class="btrk"><div class="bfil" style="width:'+(e[1]/mHD*100)+'%;background:var(--ac2)"></div></div><div class="bval">'+e[1]+'</div></div>';}).join('')+'</div>'
@@ -7568,12 +7559,17 @@ function _uaInUse(D){var u=_uaData(),fut=D>u.t;return u.recs.filter(function(r){
 function _uaAvg(eq,s,e){
   var u=_uaData(),s2=s<u.first?u.first:s,e2=e>u.t?u.t:e;if(s2>e2)return null;
   var m=eq?(u.cnt[eq]||{}):u.tot,sum=0,n=0;for(var d=s2;d<=e2;d=_ymdAdd(d,1)){sum+=m[d]||0;n++;}
-  return{v:sum/n,n:n,full:s2===s&&e2===e};
+  return{v:sum/n,n:n,full:s2===s&&e2===e,sum:sum};
 }
 function _uaAvgTxt(r){return r?(r.v.toFixed(1)+(r.full?'':'*')):'—';}
+// §AVG-SUM: แสดงผลรวมก่อนหาร (เครื่อง-วัน) ในวงเล็บข้างค่าเฉลี่ย — แสดงผลอย่างเดียว ไม่แตะวิธีคำนวณ (ไฟล์ส่งออกใช้ _uaAvgTxt เดิม ไม่มีวงเล็บ)
+function _uaSumN(r){return(r&&r.sum!==undefined&&r.sum!==null)?Math.round(r.sum).toLocaleString('en-US'):'';}
+function _uaSumS(r){var t=_uaSumN(r);return t?' ('+t+')':'';}
+function _uaSumHtml(r){var t=_uaSumN(r);return t?' <span style="color:var(--mu);font-size:10px;font-weight:400">('+t+')</span>':'';}
+function _uaSumTip(r){var t=_uaSumN(r);return t?' · รวม '+t+' เครื่อง-วัน':'';}
 function _uaAvgTd(r,bold){
   if(!r)return'<td style="text-align:center;color:var(--mu)">—</td>';
-  return'<td style="text-align:center;font-family:var(--mo);'+(bold?'font-weight:700;':'')+(r.full?'color:var(--tx)':'color:var(--wn)')+'" title="เฉลี่ยจาก '+r.n+' วัน'+(r.full?'':' (ข้อมูลไม่ครบช่วง)')+'">'+_uaAvgTxt(r)+'</td>';
+  return'<td style="text-align:center;font-family:var(--mo);'+(bold?'font-weight:700;':'')+(r.full?'color:var(--tx)':'color:var(--wn)')+'" title="เฉลี่ยจาก '+r.n+' วัน'+(r.full?'':' (ข้อมูลไม่ครบช่วง)')+_uaSumTip(r)+'">'+_uaAvgTxt(r)+_uaSumHtml(r)+'</td>';
 }
 // ปี (พ.ศ.) ของวันที่ ตามฐาน: fy = ปีงบประมาณ (1 ต.ค. – 30 ก.ย.) / cal = ปีปฏิทิน
 function _uaYearOf(d,basis){var y=+d.slice(0,4),m=+d.slice(5,7);return(basis==='fy'&&m>=10?y+1:y)+543;}
@@ -7824,7 +7820,7 @@ function _uaPdf(page){
         M.rows.forEach(function(r){r.vals.forEach(function(v){if(v>mx)mx=v;});});M.total.vals.forEach(function(v){if(v>tmx)tmx=v;});
         var wd=function(d){return new Date(Date.UTC(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10))).getUTCDay();};
         var cell=function(v,max){if(v===null)return'<td class="fu">·</td>';var a=v?(0.10+0.55*v/max):0;return'<td style="background:rgba(2,132,199,'+a.toFixed(2)+')">'+(v||'')+'</td>';};
-        var stat=function(r){return'<td class="'+(r.avg&&!r.avg.full?'part':'')+'">'+_uaAvgTxt(r.avg)+'</td><td>'+r.peak+(r.peakDay?' ('+(+r.peakDay.slice(8))+')':'')+'</td>';};
+        var stat=function(r){return'<td class="'+(r.avg&&!r.avg.full?'part':'')+'">'+_uaAvgTxt(r.avg)+_uaSumS(r.avg)+'</td><td>'+r.peak+(r.peakDay?' ('+(+r.peakDay.slice(8))+')':'')+'</td>';};
         body='<table><colgroup><col style="width:'+wName+'%">'+M.days.map(function(){return'<col style="width:'+wDay.toFixed(3)+'%">';}).join('')+'<col style="width:'+wAvg+'%"><col style="width:'+wPk+'%"></colgroup>'
           +'<thead><tr><th class="n">ชนิดเครื่องมือ</th>'+M.days.map(function(d){var w=wd(d);return'<th class="'+(w===0||w===6?'we':'')+'">'+(+d.slice(8))+'</th>';}).join('')+'<th>เฉลี่ย/วัน</th><th>สูงสุด (วันที่)</th></tr></thead><tbody>'
           +M.rows.map(function(r){return'<tr><td class="n">'+E(r.eq)+'</td>'+r.vals.map(function(v){return cell(v,mx);}).join('')+stat(r)+'</tr>';}).join('')
@@ -7864,7 +7860,7 @@ function _uaPdf(page){
       sub='ข้อมูลที่มี '+_thShortDate(u.first)+' – '+_thShortDate(u.t)+' · ค่า = เฉลี่ยจำนวนเครื่องที่ใช้อยู่ต่อวัน (นับตัวเครื่อง หารด้วยจำนวนวันตามปฏิทิน)';
       if(!C.rows.length)body='<p>ไม่มีข้อมูลในช่วงนี้</p>';
       else{
-        var td=function(r,b){return'<td class="'+(r&&!r.full?'part':'')+(b?' b':'')+'">'+_uaAvgTxt(r)+'</td>';};
+        var td=function(r,b){return'<td class="'+(r&&!r.full?'part':'')+(b?' b':'')+'">'+_uaAvgTxt(r)+_uaSumS(r)+'</td>';};
         var ch=function(v){return'<td>'+(v===null?'—':(v>=0?'+':'')+v.toFixed(0)+'%')+'</td>';};
         body='<table><thead><tr><th class="n" style="width:'+(kind==='m'?16:24)+'%">ชนิดเครื่องมือ</th>'+C.cols.map(function(c){return'<th>'+E(c.label)+(c.sub?'<br><span class="sm">'+E(c.sub)+'</span>':'')+'</th>';}).join('')
           +(kind==='y'?'<th>เปลี่ยนแปลง'+(C.cmp?'<br><span class="sm">'+E(C.cols[C.cmp[0]].label)+' → '+E(C.cols[C.cmp[1]].label)+'</span>':'')+'</th>':'')+'</tr></thead><tbody>'
@@ -7924,9 +7920,9 @@ function _hcVal(H,id,s,e){
   var s2=s<H.first?H.first:s,e2=e>H.t?H.t:e;if(s2>e2)return null;
   var ks=id?[id]:H.defs.map(function(x){return x.id;}),sum=0,n=0,L=0;
   for(var d=s2;d<=e2;d=_ymdAdd(d,1)){n++;for(var j=0;j<ks.length;j++){sum+=H.cnt[ks[j]][d]||0;L+=H.ln[ks[j]][d]||0;}}
-  return{v:_hc.met==='avg'?sum/n:L,n:n,full:s2===s&&e2===e};
+  return{v:_hc.met==='avg'?sum/n:L,n:n,full:s2===s&&e2===e,sum:sum};
 }
-function _hcTxt(r){return r?((_hc.met==='avg'?r.v.toFixed(1):String(r.v))+(r.full?'':'*')):'—';}
+function _hcTxt(r){return r?((_hc.met==='avg'?r.v.toFixed(1):String(r.v))+(r.full?'':'*')+(_hc.met==='avg'?_uaSumS(r):'')):'—';}
 function _hcYL(Y){return(_hc.basis==='fy'?'ปีงบ ':'ปี ')+Y;}
 function _hcYears(H){var a=_uaYearOf(H.first,_hc.basis),b=_uaYearOf(H.t,_hc.basis),o=[];for(var y=a;y<=b;y++)o.push(y);return o;}
 function _hcModel(){
@@ -8111,8 +8107,8 @@ function _uaExportRows(page){
   var rows=[];
   if(page==='uaMonth'){
     var M=_uaMonthModel();
-    rows.push(['ชนิดเครื่องมือ'].concat(M.days.map(function(d){return _thShortDate(d);}),['เฉลี่ย/วัน','สูงสุด','วันที่สูงสุด']));
-    M.rows.concat([M.total]).forEach(function(r){rows.push([r.eq||'รวมทุกชนิด'].concat(r.vals.map(function(v){return v===null?'':v;}),[_uaAvgTxt(r.avg),r.peak,r.peakDay?_thShortDate(r.peakDay):'']));});
+    rows.push(['ชนิดเครื่องมือ'].concat(M.days.map(function(d){return _thShortDate(d);}),['เฉลี่ย/วัน','สูงสุด','วันที่สูงสุด','รวม (เครื่อง-วัน)','จำนวนวันที่หาร']));
+    M.rows.concat([M.total]).forEach(function(r){rows.push([r.eq||'รวมทุกชนิด'].concat(r.vals.map(function(v){return v===null?'':v;}),[_uaAvgTxt(r.avg),r.peak,r.peakDay?_thShortDate(r.peakDay):'',r.avg?Math.round(r.avg.sum):'',r.avg?r.avg.n:'']));});
   }else if(page==='uaDay'){
     var D=_ua.date,fut=D>_uaData().t;
     rows.push(['วันที่','ชนิดเครื่องมือ','เลขเครื่อง','แผนก','ผู้ป่วย','LoanID','วันยืม','วันคืนตัวเครื่อง','ใช้มาแล้ว (วัน)','สถานะในวันนั้น']);
@@ -8301,7 +8297,7 @@ async function renderSum(r){
           {l:'ยืมทั้งหมด',v:_totB,c:'var(--ac)',s:'ครั้ง'},
           {l:'คืนทั้งหมด',v:_totR,c:'var(--ok)',s:'ครั้ง'},
           {l:'ยังไม่คืน',v:_pending,c:_pending>10?'var(--er)':'var(--wn)',s:'ครั้ง'},
-          {l:'เฉลี่ย/วัน',v:_avgDay,c:'var(--tx)',s:'ครั้ง'},
+          {l:'เฉลี่ย/วัน',v:_avgDay+' ('+_totB+')',c:'var(--tx)',s:'ครั้ง'},
           {l:'สูงสุด',v:_maxDayB,c:'var(--ac)',s:_maxDayDate?_maxDayDate.slice(5):''},
         ].map(function(m){
           return'<div style="background:var(--bg);border-radius:7px;padding:8px 10px;border:0.5px solid var(--bd);text-align:center">'
@@ -8337,7 +8333,7 @@ async function renderSum(r){
           +'<div style="text-align:center;padding:3px 2px;background:var(--s2);border-radius:4px"><div style="font-size:14px;font-weight:700;font-family:var(--mo);color:#185FA5">'+tb+'</div><div style="font-size:8px;color:var(--mu);margin-top:1px">ยืม</div></div>'
           +'<div style="text-align:center;padding:3px 2px;background:var(--s2);border-radius:4px"><div style="font-size:14px;font-weight:700;font-family:var(--mo);color:#10b981">'+tr2+'</div><div style="font-size:8px;color:var(--mu);margin-top:1px">คืน</div></div>'
           +'<div style="text-align:center;padding:3px 2px;background:var(--s2);border-radius:4px"><div style="font-size:14px;font-weight:700;font-family:var(--mo);color:'+pendCol+'">'+pend+'</div><div style="font-size:8px;color:var(--mu);margin-top:1px">ค้าง</div></div>'
-          +'<div style="text-align:center;padding:3px 2px;background:var(--s2);border-radius:4px"><div style="font-size:14px;font-weight:700;font-family:var(--mo);color:var(--mu)">'+avg+'</div><div style="font-size:8px;color:var(--mu);margin-top:1px">เฉลี่ย/วัน</div></div>'
+          +'<div style="text-align:center;padding:3px 2px;background:var(--s2);border-radius:4px"><div style="font-size:14px;font-weight:700;font-family:var(--mo);color:var(--mu)">'+avg+' <span style="font-size:9px;font-weight:400">('+tb+')</span></div><div style="font-size:8px;color:var(--mu);margin-top:1px">เฉลี่ย/วัน</div></div>'
         +'</div>'
         +(isActive?'<div style="position:absolute;top:4px;right:6px;font-size:9px;color:'+col+';font-weight:700">✓ กรองอยู่</div>':'')
       +'</div>';
@@ -9366,7 +9362,7 @@ async function renderSum(r){
         +'<div style="background:var(--s2);border-radius:7px;padding:8px 10px;text-align:center;border:0.5px solid var(--bd)"><div style="font-size:18px;font-weight:700;font-family:var(--mo);color:var(--ac)">'+rangeDays+'</div><div style="font-size:9px;color:var(--mu);margin-top:2px">วันที่เลือก</div></div>'
         +'<div style="background:var(--s2);border-radius:7px;padding:8px 10px;text-align:center;border:0.5px solid var(--bd)"><div style="font-size:18px;font-weight:700;font-family:var(--mo);color:var(--er)">'+grandTotal+'</div><div style="font-size:9px;color:var(--mu);margin-top:2px">รายการทั้งหมด</div></div>'
         +'<div style="background:var(--s2);border-radius:7px;padding:8px 10px;text-align:center;border:0.5px solid var(--bd)"><div style="font-size:18px;font-weight:700;font-family:var(--mo);color:var(--ok)">'+Object.keys(allDepts).length+'</div><div style="font-size:9px;color:var(--mu);margin-top:2px">แผนกที่ยืม</div></div>'
-        +'<div style="background:var(--s2);border-radius:7px;padding:8px 10px;text-align:center;border:0.5px solid var(--bd)"><div style="font-size:18px;font-weight:700;font-family:var(--mo);color:var(--wn)">'+avgPerDay+'</div><div style="font-size:9px;color:var(--mu);margin-top:2px">เฉลี่ย/วัน</div></div>'
+        +'<div style="background:var(--s2);border-radius:7px;padding:8px 10px;text-align:center;border:0.5px solid var(--bd)"><div style="font-size:18px;font-weight:700;font-family:var(--mo);color:var(--wn)">'+avgPerDay+' <span style="font-size:11px;font-weight:400;color:var(--mu)">('+grandTotal+')</span></div><div style="font-size:9px;color:var(--mu);margin-top:2px">เฉลี่ย/วัน</div></div>'
         +'<div style="background:var(--s2);border-radius:7px;padding:8px 10px;text-align:center;border:0.5px solid var(--bd)"><div style="font-size:18px;font-weight:700;font-family:var(--mo);color:var(--ac2)">'+eqCols.length+'</div><div style="font-size:9px;color:var(--mu);margin-top:2px">ชนิดเครื่องมือ</div></div>'
       +'</div>';
 
@@ -10233,6 +10229,7 @@ function _cmpAvgByMonth(eqName,yr){
   return o;
 }
 function _cmpAvgByYear(eqName,yr){var r=_uaAvg(eqName,yr+'-01-01',yr+'-12-31');return r?Math.round(r.v*10)/10:null;}
+function _cmpSumS(eqName,yr){var r=_uaAvg(eqName,yr+'-01-01',yr+'-12-31');return r?_uaSumHtml(r):'';}   // §AVG-SUM
 function _cmpLoanByMonth(eqName,yr){
   var byMonth=Array(12).fill(null);
   expanded().forEach(function(item){
@@ -10291,7 +10288,7 @@ function _cmpDraw(){
       var dC=(pC!==null&&sumC!==null)?(sumC-pC):null;
       kh+='<div style="background:var(--s2);border-radius:6px;padding:9px 11px;border-left:3px solid '+CLR[Math.min(i,4)]+'">'
         +'<div style="font-size:10px;color:var(--mu)">ปี '+(parseInt(yr)+543)+'</div>'
-        +'<div style="font-size:16px;font-weight:700;font-family:var(--mo);color:var(--ac);margin-top:3px">'+(avgA!==null?avgA:'—')+'</div>'
+        +'<div style="font-size:16px;font-weight:700;font-family:var(--mo);color:var(--ac);margin-top:3px">'+(avgA!==null?avgA+_cmpSumS(eqName,yr):'—')+'</div>'
         +'<div style="font-size:10px;color:var(--mu)">เครื่อง/วัน</div>'
         +(dA!==null?'<div style="font-size:10px;color:'+(dA>=0?'var(--ok)':'var(--er)')+';">'+(dA>=0?'+':'')+dA+' จากปีก่อน</div>':'')
         +'<div style="margin-top:5px;font-size:13px;font-weight:700;font-family:var(--mo);color:var(--tx)">'+(sumC!==null?sumC.toLocaleString():'—')+'</div>'
@@ -10355,7 +10352,7 @@ function _cmpDraw(){
         var cArr2=_cmpLoanByMonth(eq2,yr).filter(function(v){return v!==null;});
         var avgA2=_cmpAvgByYear(eq2,yr);
         var sumC2=cArr2.length?cArr2.reduce(function(a,b){return a+b;},0):null;
-        rows+='<td style="padding:4px 8px;text-align:center;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd);font-family:var(--mo);font-size:12px;color:var(--ac)">'+(avgA2!==null?avgA2:'—')+'</td>';
+        rows+='<td style="padding:4px 8px;text-align:center;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd);font-family:var(--mo);font-size:12px;color:var(--ac)">'+(avgA2!==null?avgA2+_cmpSumS(eq2,yr):'—')+'</td>';
         rows+='<td style="padding:4px 8px;text-align:center;border-bottom:1px solid var(--bd);font-family:var(--mo);font-size:12px;color:var(--tx)">'+(sumC2!==null?sumC2.toLocaleString():'—')+'</td>';
         if(i<yrs.length-1){
           var tr2='—';
@@ -16744,6 +16741,254 @@ function changePIN(type){
       return r;
     };
   }catch(e){console.warn('swlCmp init:',e.message);}
+})();
+</script>
+<script>
+/* §HFNC-RULES — จัดกลุ่มแผนกเข้าอาคาร + ชุดเกณฑ์การใช้งาน HFNC (ตั้งค่า/แก้คำอธิบายได้ใน Admin › HFNC Set)
+   ค่าเก็บใน app_settings คีย์ 'hfnc_rules' (ผ่าน saveConfig/_CFG_KEYS เดิม) · ไม่มีตาราง/คอลัมน์ใหม่
+   Dashboard (updateDash) เรียก _hfncCfg/_hfncEval/... ที่นี่ · ไม่เคยตั้งค่า = ใช้ค่าเริ่มต้นด้านล่าง */
+(function(){
+  try{
+    var MU='<span style="color:var(--mu)">',E='</span>';
+    function DEF(){return{v:1,
+      buildings:[
+        {id:'b14',name:'อาคาร 14 ชั้น',depts:['14/9.','14/8.','14/7.','อญ','อช'],desc:''},
+        {id:'bmc',name:'อาคารเชิดบุญเมือง',depts:['MICU'],desc:''},
+        {id:'b100',name:'อาคาร 100 ปี',depts:['100/9','100/6'],desc:''},
+        {id:'b80',name:'อาคาร 80 พรรษา',depts:['80/10','80/9','80/8','ศช','ศญ','80/5','PICU','80/1','80/2'],desc:''},
+        {id:'bopd',name:'อาคารผู้ป่วยนอก/พิเคราะห์',depts:['ER','CICU','SICU'],desc:'ใช้จุดจ่ายออกซิเจนแยกจากอาคารอื่น จึงไม่นับรวมในเกณฑ์รวม'}],
+      rules:[
+        {id:'r100',name:'อาคาร 100 ปี',limit:30,bids:['b100'],desc:''},
+        {id:'rall',name:'รวม 4 อาคาร',limit:65,bids:['b14','bmc','b100','b80'],desc:'อาคาร 14 ชั้น · เชิดบุญเมือง · 100 ปี · 80 พรรษา (ไม่รวมอาคารผู้ป่วยนอก/พิเคราะห์ เพราะใช้จุดจ่ายออกซิเจนแยก)'}]};}
+    function norm(c){
+      try{
+        if(!c||!Array.isArray(c.buildings)||!Array.isArray(c.rules))return DEF();
+        var seen={},ids={},bs=[];
+        c.buildings.forEach(function(b){var n=String(b&&b.name||'').trim();if(!n||seen[n])return;seen[n]=1;
+          var id=String(b.id||n);ids[id]=1;bs.push({id:id,name:n,depts:(Array.isArray(b.depts)?b.depts:[]).map(String),desc:String(b.desc||'')});});
+        var rs=c.rules.map(function(r){var l=parseInt(r&&r.limit,10);return{id:String(r&&r.id||r&&r.name||''),name:String(r&&r.name||'').trim(),limit:l>0?l:0,
+          bids:(Array.isArray(r&&r.bids)?r.bids:[]).filter(function(i){return ids[i];}),desc:String(r&&r.desc||'')};}).filter(function(r){return r.name&&r.bids.length;});
+        return{v:1,buildings:bs,rules:rs};
+      }catch(e){return DEF();}
+    }
+    window._hfncRaw=function(){return norm(_lsGet('hfnc_rules',null));};
+    window._hfncCfg=function(){var c=window._hfncRaw(),m={};c.buildings.forEach(function(b){m[b.name]=b.depts;});c.map=m;return c;};
+    window._hfncBldOf=function(c,dept){for(var i=0;i<c.buildings.length;i++)if(c.buildings[i].depts.indexOf(dept)>=0)return c.buildings[i].name;return '';};
+    window._hfncEval=function(c,bC){
+      var nm={};c.buildings.forEach(function(b){nm[b.id]=b.name;});
+      return c.rules.map(function(r){var bn=r.bids.map(function(i){return nm[i];}),n=bn.reduce(function(s,k){return s+(bC[k]||0);},0);
+        return{name:r.name,limit:r.limit,n:n,over:r.limit>0&&n>r.limit,desc:r.desc,bnames:bn,single:r.bids.length===1};});
+    };
+    window._hfncBarInfo=function(c,HR,name){var o={wb:false,over:false,lim:''};
+      HR.forEach(function(r){if(r.bnames.indexOf(name)<0)return;o.wb=true;if(r.over)o.over=true;if(r.single&&r.limit)o.lim=' /'+r.limit;});return o;};
+    window._hfncTopWarn=function(HR){var ov=HR.filter(function(r){return r.over;});if(!ov.length)return '';
+      return '<div class="hwarn"><span style="font-size:20px">⚠️</span><div><strong style="color:var(--er)">แจ้งเตือน HFNC</strong><br><span style="font-size:12px">'
+        +ov.map(function(r){return esc(r.name)+' = <strong>'+r.n+'</strong> เครื่อง — เกินเกณฑ์ '+r.limit+'!';}).join('<br>')+'</span></div></div>';};
+    window._hfncBannersHtml=function(HR,total){var h='';
+      HR.forEach(function(r){if(!r.over)return;
+        h+=r.single?'<div style="background:rgba(239,68,68,.08);border:1px solid var(--er);border-radius:7px;padding:10px;display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:22px">⚠️</span><div><strong style="color:var(--er);font-size:13px">แจ้งเตือน '+esc(r.name)+'</strong><br><span style="font-size:12px">HFNC '+esc(r.name)+' = <strong style="color:var(--er)">'+r.n+'</strong> เครื่อง — เกินเกณฑ์ '+r.limit+' เครื่อง!</span></div></div>'
+          :'<div class="hwarn"><span style="font-size:22px">🚨</span><div><strong style="color:var(--er);font-size:14px">แจ้งเตือนด่วน!</strong><br><span style="font-size:13px">'+esc(r.name)+' = <strong style="color:var(--er);font-size:16px">'+r.n+'</strong> เครื่อง <strong style="color:var(--er)">เกินเกณฑ์ '+r.limit+' เครื่อง!</strong></span></div></div>';});
+      return h||'<div style="background:rgba(16,185,129,.08);border:1px solid var(--ok);border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;gap:8px;align-items:center"><span style="font-size:18px">✅</span><div style="font-size:13px">ยอดรวม HFNC ทุกจุดจ่าย = <strong style="color:var(--ok)">'+total+'</strong> เครื่อง — ปกติ</div></div>';};
+    window._hfncCriteriaBody=function(c,HR,bC,unm,total){
+      var sm='<div style="font-size:11px;color:var(--mu);margin:-2px 0 4px 20px;line-height:1.5">',h='',inR={};
+      HR.forEach(function(r){r.bnames.forEach(function(k){inR[k]=1;});
+        h+='<div>'+(r.single?'🏥 ':'🏢 ')+esc(r.name)+(r.limit?' ไม่เกิน <strong style="color:'+(r.over?'var(--er)':'var(--wn)')+'">'+r.limit+' เครื่อง</strong>':' '+MU+'(ไม่ตั้งเกณฑ์)'+E)
+          +(r.over?' <span style="color:var(--er);font-weight:700">⚠️ เกิน!</span>':' <span style="color:var(--ok)">✓ ปัจจุบัน '+r.n+' เครื่อง</span>')+'</div>'+sm+esc(r.desc||('รวม: '+r.bnames.join(' · ')))+'</div>';});
+      c.buildings.forEach(function(b){if(inR[b.name])return;
+        h+='<div>🫁 '+esc(b.name)+' <strong>'+(bC[b.name]||0)+' เครื่อง</strong> '+MU+'(ไม่นับรวมในเกณฑ์ใด)'+E+'</div>'+(b.desc?sm+esc(b.desc)+'</div>':'');});
+      c.buildings.forEach(function(b){if(inR[b.name]&&b.desc)h+=sm+'<b>'+esc(b.name)+':</b> '+esc(b.desc)+'</div>';});
+      h+='<div style="border-top:1px dashed var(--bd);margin-top:4px;padding-top:4px">รวมทุกจุดจ่าย = <strong>'+total+' เครื่อง</strong> '+MU+'(ดูภาพรวม ไม่มีเกณฑ์)'+E+'</div>';
+      if(unm.length){var dn={};unm.forEach(function(i){var d=S(i.loan.DeptName)||'ไม่ระบุ';dn[d]=(dn[d]||0)+1;});
+        h+='<div style="color:var(--wn)">⚠️ แผนกที่ไม่อยู่ในอาคารใด: '+unm.length+' เครื่อง ('+Object.keys(dn).map(function(k){return esc(k)+' '+dn[k];}).join(', ')+') — จัดได้ที่ Admin › HFNC Set</div>';}
+      return h;};
+
+    /* ── Admin UI (ต่อท้ายแท็บ HFNC Set) ── */
+    var W=null,DL=[],ip='padding:5px 7px;background:var(--bg);border:1px solid var(--bd);border-radius:5px;color:var(--tx);font-size:13px';
+    var bt='class="btn bg sm" style="padding:3px 9px;font-size:12px"';
+    function uid(){return 'x'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+    function allDepts(){var a=[];(window.DEPTS||[]).forEach(function(d){if(d&&d.n&&d.n!=='อื่นๆ'&&a.indexOf(d.n)<0)a.push(d.n);});
+      W.buildings.forEach(function(b){b.depts.forEach(function(n){if(a.indexOf(n)<0)a.push(n);});});return a;}
+    function owner(n,ex){for(var i=0;i<W.buildings.length;i++)if(i!==ex&&W.buildings[i].depts.indexOf(n)>=0)return W.buildings[i].name||'(ไม่มีชื่อ)';return '';}
+    function draw(){
+      var el=document.getElementById('hfRulesBody');if(!el||!W)return;DL=allDepts();
+      var h='<div style="font-weight:700;margin:4px 0 6px">🏢 อาคาร <span style="font-weight:400;font-size:11px;color:var(--mu)">(1 แผนกอยู่ได้อาคารเดียว)</span></div>';
+      W.buildings.forEach(function(b,i){
+        h+='<div style="border:1px solid var(--bd);border-radius:7px;padding:8px 10px;margin-bottom:8px"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+          +'<input value="'+esc(b.name)+'" placeholder="ชื่ออาคาร" style="'+ip+';flex:1;min-width:150px" oninput="_hfwB('+i+',\'name\',this.value)">'
+          +'<button '+bt+' onclick="_hfwDelB('+i+')">🗑 ลบอาคาร</button></div>'
+          +'<textarea rows="2" placeholder="คำอธิบายอาคาร (แสดงใน Dashboard)" style="'+ip+';width:100%;margin-bottom:6px" oninput="_hfwB('+i+',\'desc\',this.value)">'+esc(b.desc)+'</textarea><div style="display:flex;flex-wrap:wrap;gap:4px 12px">';
+        DL.forEach(function(n,k){var o=owner(n,i);
+          h+='<label style="font-size:12px;'+(o?'color:var(--mu)':'')+'" title="'+(o?'อยู่ใน '+esc(o):'')+'"><input type="checkbox" '+(b.depts.indexOf(n)>=0?'checked ':'')+(o?'disabled ':'')+'onchange="_hfwBd('+i+','+k+',this.checked)"> '+esc(n)+(o?' <small>('+esc(o)+')</small>':'')+'</label>';});
+        h+='</div></div>';});
+      h+='<button '+bt+' onclick="_hfwAddB()">+ เพิ่มอาคาร</button>'
+        +'<div style="font-weight:700;margin:14px 0 6px">📏 ชุดเกณฑ์ <span style="font-weight:400;font-size:11px;color:var(--mu)">(เลือกอาคารที่รวมกัน · เว้นเกณฑ์ว่าง = ไม่ตั้งเกณฑ์)</span></div>';
+      W.rules.forEach(function(r,i){
+        h+='<div style="border:1px solid var(--bd);border-radius:7px;padding:8px 10px;margin-bottom:8px"><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">'
+          +'<input value="'+esc(r.name)+'" placeholder="ชื่อชุดเกณฑ์" style="'+ip+';flex:1;min-width:150px" oninput="_hfwR('+i+',\'name\',this.value)">'
+          +'<label style="font-size:12px">เกณฑ์สูงสุด <input value="'+esc(r.limit||'')+'" inputmode="numeric" style="'+ip+';width:70px" oninput="_hfwR('+i+',\'limit\',this.value)"> เครื่อง</label>'
+          +'<button '+bt+' onclick="_hfwDelR('+i+')">🗑 ลบชุดเกณฑ์</button></div>'
+          +'<textarea rows="2" placeholder="คำอธิบายชุดเกณฑ์ (เว้นว่าง = แสดงรายชื่ออาคารที่รวมให้อัตโนมัติ)" style="'+ip+';width:100%;margin-bottom:6px" oninput="_hfwR('+i+',\'desc\',this.value)">'+esc(r.desc)+'</textarea><div style="display:flex;flex-wrap:wrap;gap:4px 12px">';
+        W.buildings.forEach(function(b){h+='<label style="font-size:12px"><input type="checkbox" '+(r.bids.indexOf(b.id)>=0?'checked ':'')+'onchange="_hfwRb('+i+',\''+esc(b.id)+'\',this.checked)"> '+esc(b.name||'(ไม่มีชื่อ)')+'</label>';});
+        h+='</div></div>';});
+      var un=DL.filter(function(n){return !owner(n,-1);});
+      h+='<button '+bt+' onclick="_hfwAddR()">+ เพิ่มชุดเกณฑ์</button>'
+        +'<div style="margin-top:12px;font-size:12px;color:var(--wn)">⚠️ แผนกที่ยังไม่จัดอาคาร (HFNC ของแผนกเหล่านี้ไม่ถูกนับในอาคารใด): '+(un.length?un.map(esc).join(' · '):'<span style="color:var(--ok)">ไม่มี ✓</span>')+'</div>'
+        +'<div style="margin-top:12px;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap"><button '+bt+' onclick="_hfwReset()">↺ คืนค่าเริ่มต้น</button><button class="btn badm sm" onclick="_hfwSave()">✅ บันทึกอาคารและเกณฑ์</button></div>';
+      el.innerHTML=h;
+    }
+    window._hfwB=function(i,f,v){if(W&&W.buildings[i])W.buildings[i][f]=v;};
+    window._hfwR=function(i,f,v){if(W&&W.rules[i])W.rules[i][f]=v;};
+    window._hfwBd=function(i,k,on){var b=W.buildings[i],n=DL[k],x=b.depts.indexOf(n);if(on&&x<0)b.depts.push(n);if(!on&&x>=0)b.depts.splice(x,1);draw();};
+    window._hfwRb=function(i,id,on){var r=W.rules[i],x=r.bids.indexOf(id);if(on&&x<0)r.bids.push(id);if(!on&&x>=0)r.bids.splice(x,1);};
+    window._hfwAddB=function(){W.buildings.push({id:uid(),name:'',depts:[],desc:''});draw();};
+    window._hfwAddR=function(){W.rules.push({id:uid(),name:'',limit:'',bids:[],desc:''});draw();};
+    window._hfwDelB=function(i){var b=W.buildings[i];if(!confirm('ลบอาคาร "'+(b.name||'ใหม่')+'" ? (แผนกในอาคารนี้จะกลายเป็น "ยังไม่จัดอาคาร")'))return;
+      W.buildings.splice(i,1);W.rules.forEach(function(r){r.bids=r.bids.filter(function(x){return x!==b.id;});});draw();};
+    window._hfwDelR=function(i){if(!confirm('ลบชุดเกณฑ์ "'+(W.rules[i].name||'ใหม่')+'" ?'))return;W.rules.splice(i,1);draw();};
+    window._hfwReset=function(){if(!confirm('คืนค่าเริ่มต้น (ยังไม่บันทึกจนกว่าจะกด ✅)'))return;W=JSON.parse(JSON.stringify(DEF()));draw();};
+    window._hfwSave=function(){
+      var e=[],seen={};
+      W.buildings.forEach(function(b,i){var n=String(b.name||'').trim();if(!n)e.push('อาคารที่ '+(i+1)+' ยังไม่มีชื่อ');else if(seen[n])e.push('ชื่ออาคารซ้ำ: '+n);seen[n]=1;});
+      W.rules.forEach(function(r,i){var n=String(r.name||'').trim(),l=String(r.limit===undefined||r.limit===null?'':r.limit).trim();
+        if(!n)e.push('ชุดเกณฑ์ที่ '+(i+1)+' ยังไม่มีชื่อ');
+        if(!r.bids.length)e.push('ชุดเกณฑ์ "'+n+'" ยังไม่ได้เลือกอาคาร');
+        if(l!==''&&!/^[1-9]\d*$/.test(l))e.push('เกณฑ์ของ "'+n+'" ต้องเป็นตัวเลขตั้งแต่ 1 ขึ้นไป (หรือเว้นว่าง)');});
+      if(e.length){toast(e[0],'error');return;}
+      var out={v:1,buildings:W.buildings.map(function(b){return{id:b.id,name:b.name.trim(),depts:b.depts.slice(),desc:String(b.desc||'').trim()};}),
+        rules:W.rules.map(function(r){var l=String(r.limit===undefined||r.limit===null?'':r.limit).trim();return{id:r.id,name:r.name.trim(),limit:l===''?0:+l,bids:r.bids.slice(),desc:String(r.desc||'').trim()};})};
+      saveConfig('hfnc_rules',out);
+      W=JSON.parse(JSON.stringify(window._hfncRaw()));draw();
+      toast('บันทึกอาคารและเกณฑ์ HFNC สำเร็จ','success');
+      try{if(typeof updateDash==='function')updateDash();}catch(x){}
+    };
+    function ensure(){
+      var sec=document.getElementById('lsec-hfncset');if(!sec)return;
+      if(!document.getElementById('hfRulesCard')){var c=document.createElement('div');c.className='card';c.id='hfRulesCard';
+        c.innerHTML='<div class="ctitle" style="color:#f59e0b">🏢 อาคารและเกณฑ์การใช้งาน HFNC <span style="font-size:11px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0">(ใช้กับรายงาน HFNC ใน Dashboard)</span></div><div id="hfRulesBody"></div>';sec.appendChild(c);}
+      W=JSON.parse(JSON.stringify(window._hfncRaw()));draw();
+    }
+    var o=window.showListTab;
+    window.showListTab=function(name){var r=o?o.apply(this,arguments):undefined;if(name==='hfncset'){try{ensure();}catch(e){console.warn('hfnc rules:',e.message);}}return r;};
+  }catch(e){console.warn('hfnc rules init:',e.message);}
+})();
+</script>
+<script>
+/* §DASH-EXPORT — Dashboard: เมนู "⬇️ ส่งออก" รายบล็อก (PDF แบบหน้าจอ / CSV / XLS) + ปุ่ม "🖨️ PDF แบบหน้าจอ" ทั้งหน้า
+   แสดงผล/ส่งออกอย่างเดียว: ฉีดเมนูหลัง updateDash วาดเสร็จ (MutationObserver บน #dashCont) · อ่านตัวเลขจาก DOM ที่แสดงอยู่ (ตรงกับหน้าจอเสมอ)
+   ใช้ตัวช่วยเดิม _sfpPrepClone/_sfpOpen (PDF) dlCSV/dlXLS (ไฟล์) · ไม่แตะ CSV/XLS/PDF เดิมของหน้านี้ · ไม่มี query/ฐานข้อมูล · ล้มเหลวเงียบ */
+(function(){
+  try{
+    var $=function(i){return document.getElementById(i);};
+    var T=function(el){return el?String(el.textContent||'').replace(/\s+/g,' ').trim():'';};
+    var KEY={eq:['การใช้งานเครื่องมือ (กำลังยืม)','ชนิดเครื่องมือ'],dept:['การใช้งานแยกตามแผนก','แผนก'],hfnc:['รายงานการใช้งาน HFNC','HFNC'],stats:['','การ์ดสรุป']};
+    function today(){try{return localDateStr(new Date());}catch(e){return new Date().toISOString().slice(0,10);}}
+    function kids(el){return Array.prototype.slice.call(el.children);}
+    function tableRows(tb){return Array.prototype.map.call(tb.querySelectorAll('tr'),function(tr){return Array.prototype.map.call(tr.children,T);});}
+    function broRows(card,hdr){var r=[hdr];card.querySelectorAll('.brow').forEach(function(b){r.push([T(b.querySelector('.blbl')),T(b.querySelector('.bval'))]);});return r;}
+    function build(k,el){
+      if(k==='eq'){var r=broRows(el,['ชนิดเครื่องมือ','จำนวนที่กำลังยืม (เครื่อง)']);return r.map(function(x,i){return i?[x[0],parseInt(x[1],10)||0]:x;});}
+      if(k==='dept'){var tb=el.querySelector('table');return tb?tableRows(tb):[];}
+      if(k==='hfnc'){
+        var rows=[['รายงานการใช้งาน HFNC'],['วันที่ออกรายงาน',today()],['']],sg=el.querySelector('.sgrid');
+        var ban=kids(el).filter(function(c){return c!==sg&&!c.classList.contains('ctitle')&&!c.classList.contains('dx-row')&&c.querySelector&&/แจ้งเตือน|ปกติ/.test(T(c))&&c.tagName==='DIV'&&!c.querySelector('.bwrap');});
+        if(ban.length){rows.push(['สถานะ']);ban.forEach(function(b){rows.push([T(b)]);});rows.push(['']);}
+        if(sg){rows.push(['สรุป']);sg.querySelectorAll('.sc').forEach(function(s){rows.push([T(s.querySelector('.slbl')),T(s.querySelector('.snum'))]);});rows.push(['']);}
+        var bw=el.querySelectorAll('.bwrap');
+        if(bw[0]){rows.push(['HFNC ตามอาคาร']);rows.push(['อาคาร','จำนวน (เครื่อง)','เกณฑ์ของอาคาร','เกินเกณฑ์']);
+          bw[0].querySelectorAll('.brow').forEach(function(b){var v=T(b.querySelector('.bval')),n=parseInt(v,10),m=v.match(/\/\s*(\d+)/);rows.push([T(b.querySelector('.blbl')),isNaN(n)?v:n,m?+m[1]:'',/⚠/.test(T(b))?'เกิน':'']);});rows.push(['']);}
+        if(bw[1]){rows.push(['HFNC ตามหอผู้ป่วย']);rows.push(['หอผู้ป่วย','จำนวน (เครื่อง)']);
+          bw[1].querySelectorAll('.brow').forEach(function(b){var n=parseInt(T(b.querySelector('.bval')),10);rows.push([T(b.querySelector('.blbl')),isNaN(n)?'':n]);});rows.push(['']);}
+        var ttl=Array.prototype.find.call(el.querySelectorAll('div'),function(d){return !d.children.length&&T(d)==='เกณฑ์การใช้งาน HFNC';});
+        if(ttl){rows.push(['เกณฑ์การใช้งาน HFNC (รวมคำอธิบาย)']);kids(ttl.parentElement).forEach(function(c){if(c!==ttl&&T(c))rows.push([T(c)]);});}
+        return rows;
+      }
+      return [];
+    }
+    function fname(k){return 'Dashboard_'+KEY[k][1].replace(/[\\\/:*?"<>|\s]+/g,'_')+'_'+today();}
+    function pdf(el,title,whole){
+      if(typeof _sfpPrepClone!=='function'||typeof _sfpOpen!=='function'){toast('ฟังก์ชันพิมพ์ยังไม่พร้อม','warning');return;}
+      var c=_sfpPrepClone(el);
+      c.querySelectorAll('.dx,.dx-row').forEach(function(x){x.remove();});
+      if(whole){var iv=c.querySelector('#dashInvSumDetails');if(iv)iv.remove();}
+      _sfpOpen(whole?c.innerHTML:c.outerHTML,'📊 Dashboard — '+title,'ข้อมูล ณ วันที่ออกรายงาน '+today(),'Dashboard '+title);
+    }
+    window._dxDo=function(k,fmt,btn){
+      try{
+        var d=btn&&btn.closest('details');if(d)d.open=false;
+        var host=btn.closest('[data-dxk]');var el=host&&host._dxEl;if(!el||!el.isConnected){toast('ยังไม่มีข้อมูล','warning');return;}
+        if(fmt==='pdf'){pdf(el,KEY[k][1]+(k==='stats'?'':''),false);return;}
+        var rows=build(k,el);if(!rows.length||rows.length<2){toast('ไม่มีข้อมูล','warning');return;}
+        if(fmt==='csv')dlCSV(rows.map(function(r){return r.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n'),fname(k)+'.csv');
+        else dlXLS(fname(k),rows);
+      }catch(e){console.warn('dashx:',e.message);toast('ส่งออกไม่สำเร็จ: '+e.message,'error');}
+    };
+    window._dxPage=function(){try{var c=$('dashCont');if(!c||!c.children.length||!loans){toast('ยังไม่มีข้อมูล','warning');return;}pdf(c,'รายงานทั้งหน้า',true);}catch(e){console.warn('dashx:',e.message);}};
+    function menu(k,el){
+      var row=document.createElement('div');row.className='dx-row';row.setAttribute('data-dxk',k);row._dxEl=el;row.style.cssText='display:flex;justify-content:flex-end;margin:0 0 6px';
+      var it='class="btn bg sm" style="width:100%;text-align:left;margin:2px 0;font-size:12px" type="button"';
+      row.innerHTML='<details class="dx" style="position:relative"><summary class="btn bg sm" style="list-style:none;cursor:pointer;font-size:11px;padding:2px 9px">⬇️ ส่งออก ▾</summary>'
+        +'<div style="position:absolute;right:0;top:100%;z-index:30;background:var(--s1);border:1px solid var(--bd);border-radius:6px;padding:4px;min-width:170px;box-shadow:0 4px 14px rgba(0,0,0,.3)">'
+        +'<button '+it+' onclick="_dxDo(\''+k+'\',\'pdf\',this)">🖨️ PDF (แบบหน้าจอ)</button>'
+        +(k==='stats'?'':'<button '+it+' onclick="_dxDo(\''+k+'\',\'csv\',this)">📄 CSV</button><button '+it+' onclick="_dxDo(\''+k+'\',\'xls\',this)">📊 XLS</button>')
+        +'</div></details>';
+      return row;
+    }
+
+    /* ── สรุปรายเครื่อง: ปุ่มเดียวส่งออกทุกชนิด/ทุกสถานะ/ทุกเครื่อง (PDF/CSV/XLS) ── */
+    function addInv(d){
+      var ex=d.querySelector('button[onclick="invSumExportCSV()"]');if(!ex||d.querySelector('.dx-inv'))return;
+      var s=document.createElement('span');s.className='dx-inv';s.style.cssText='display:inline-flex;gap:4px;align-items:center;margin-left:6px;padding-left:8px;border-left:1px solid var(--bd)';
+      var L={pdf:'🖨️ PDF',csv:'📄 CSV',xls:'📊 XLS'};
+      s.innerHTML='<span style="font-size:11px;color:var(--mu)">ทุกชนิด:</span>'+['pdf','csv','xls'].map(function(f){return '<button class="btn bg sm" type="button" data-f="'+f+'" title="ส่งออกทุกชนิดเครื่องมือ ทุกสถานะ ในครั้งเดียว" onclick="_dxInvAll(\''+f+'\',this)">'+L[f]+'</button>';}).join('');
+      ex.insertAdjacentElement('afterend',s);
+    }
+    window._dxInvAll=async function(fmt,btn){
+      var old=btn?btn.textContent:'';
+      try{
+        if(btn){btn.disabled=true;btn.textContent='⏳';}
+        if(typeof loadEquipmentUnits==='function')await loadEquipmentUnits();   // โหลดทะเบียนเครื่องล่าสุด (เหมือนปุ่ม 🔄 รีเฟรช) — ไม่ต้องเปิดดูทีละชนิด
+        var ord=_INV_SUM_ORDER,types=_invGet().map(function(e){return e.name;}),rows=[['ชนิดเครื่องมือ','สถานะ','No.','แผนก']],sum=[],all=0,G={};
+        types.forEach(function(t){var g=_invSumGroups(t),n=0;G[t]=g;ord.forEach(function(l){(g[l]||[]).forEach(function(it){rows.push([t,l,it.no,it.dept||'']);n++;});});all+=n;
+          sum.push([t].concat(ord.map(function(l){return (g[l]||[]).length;}),[n]));});
+        if(!all){toast('ยังไม่มีข้อมูลเครื่อง','warning');return;}
+        var fn='สรุปรายเครื่อง_ทุกชนิด_'+today();
+        if(fmt==='pdf'){
+          if(typeof _sfpOpen!=='function'){toast('ฟังก์ชันพิมพ์ยังไม่พร้อม','warning');return;}
+          var h='<div style="font-size:11px;margin-bottom:8px;color:#334155">รวม '+all+' เครื่อง · '+types.length+' ชนิด</div>';
+          types.forEach(function(t){var g=G[t],n=0;ord.forEach(function(l){n+=(g[l]||[]).length;});if(!n)return;
+            h+='<div style="margin:0 0 10px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px"><div style="font-weight:700;font-size:13px;margin-bottom:5px">'+esc(t)+' <span style="font-weight:400;color:#64748b">(รวม '+n+' เครื่อง)</span></div>';
+            ord.forEach(function(l){var a=g[l]||[];if(!a.length)return;
+              h+='<div style="margin:3px 0"><b style="font-size:11px">'+esc(l)+' ('+a.length+')</b><div style="font-size:10.5px;line-height:1.7;color:#111">'
+                +a.map(function(it){return '<span style="display:inline-block;margin:1px 8px 1px 0;white-space:nowrap">'+esc(it.no)+(it.dept?'<span style="color:#64748b"> '+esc(it.dept)+'</span>':'')+'</span>';}).join('')+'</div></div>';});
+            h+='</div>';});
+          _sfpOpen(h,'📋 สรุปรายเครื่อง — ทุกชนิด','ข้อมูล ณ วันที่ออกรายงาน '+today(),'สรุปรายเครื่อง ทุกชนิด');return;
+        }
+        rows.push(['']);rows.push(['สรุปจำนวนต่อชนิด']);rows.push(['ชนิดเครื่องมือ'].concat(ord,['รวม']));sum.forEach(function(r){rows.push(r);});
+        if(fmt==='csv')dlCSV(rows.map(function(r){return r.map(function(c){return '"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n'),fn+'.csv');
+        else dlXLS(fn,rows);
+      }catch(e){console.warn('dashx inv:',e.message);toast('ส่งออกไม่สำเร็จ: '+e.message,'error');}
+      finally{if(btn){btn.disabled=false;btn.textContent=old;}}
+    };
+    function inject(){
+      var root=$('dashCont');if(!root)return;
+      var seenStats=false;
+      kids(root).forEach(function(ch){
+        if(ch.classList.contains('dx-row'))return;
+        var k=null,host=ch,at='before';
+        if(ch.classList.contains('card')){var tt=T(ch.querySelector('.ctitle'));['eq','dept','hfnc'].forEach(function(x){if(tt.indexOf(KEY[x][0])>=0)k=x;});at='afterTitle';}
+        else if(ch.classList.contains('sgrid')&&!seenStats){seenStats=true;k='stats';}
+        else if(ch.id==='dashInvSumDetails'){addInv(ch);return;}
+        if(!k)return;
+        if(at==='afterTitle'){var t=ch.querySelector('.ctitle');if(!t||(t.nextElementSibling&&t.nextElementSibling.classList.contains('dx-row')))return;t.insertAdjacentElement('afterend',menu(k,ch));}
+        else{if(ch.previousElementSibling&&ch.previousElementSibling.classList.contains('dx-row'))return;ch.insertAdjacentElement('beforebegin',menu(k,ch));}
+      });
+    }
+    var pg=$('pg-dash'),hd=pg&&pg.querySelector('.card button[onclick="updateDash()"]');
+    if(hd&&!pg.querySelector('[onclick="_dxPage()"]')){var b=document.createElement('button');b.className='btn bg sm';b.type='button';b.setAttribute('onclick','_dxPage()');b.title='ออกรายงานทั้งหน้า Dashboard (พื้นขาว A4 หน้าตาแบบหน้าจอ)';b.textContent='🖨️ PDF แบบหน้าจอ';hd.parentNode.insertBefore(b,hd);}
+    document.addEventListener('click',function(e){document.querySelectorAll('#dashCont details.dx[open]').forEach(function(d){if(!d.contains(e.target))d.open=false;});});
+    var root=$('dashCont'),tm=null;
+    if(root&&window.MutationObserver){new MutationObserver(function(){clearTimeout(tm);tm=setTimeout(function(){try{inject();}catch(e){console.warn('dashx:',e.message);}},60);}).observe(root,{childList:true,subtree:true});inject();}
+  }catch(e){console.warn('dashx init:',e.message);}
 })();
 </script>
 </body>
