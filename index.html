@@ -6804,6 +6804,16 @@ async function saveQuickBorrow(){
   }
   if(!units.length){bigToast('ไม่มีเครื่องที่ต้องบันทึกเพิ่มแล้ว (สำเร็จครบทุกเครื่องแล้ว)','success');return;}
 
+  // เตือนรวมครั้งเดียวก่อนบันทึกจริง ถ้ามีเลขเครื่องที่ไม่พบในทะเบียนของชนิดนั้นๆ —
+  // ไม่บล็อก แค่ให้เห็นสรุปก่อนตัดสินใจ (ยกเลิกได้ถ้าอยากกลับไปแก้เลข)
+  var _mismatches=units.filter(function(u){return _eqNoInRegistry(u.name,u.eqNo)===false;});
+  if(_mismatches.length){
+    var _list=_mismatches.map(function(u){return '• '+u.name+' เลข "'+u.eqNo+'"';}).join('\n');
+    if(!confirm('พบเลขเครื่องที่ไม่อยู่ในทะเบียน '+_mismatches.length+' รายการ:\n'+_list+'\n\nยืนยันจะบันทึกต่อไปหรือไม่? (ยังบันทึกได้ปกติ แค่เตือนเฉยๆ)')){
+      return;
+    }
+  }
+
   var btn=document.getElementById('qbSaveBtn');
   if(btn){btn.disabled=true;btn.dataset._t=btn.innerHTML;}
   for(var u=0;u<units.length;u++){
@@ -9085,7 +9095,7 @@ async function renderSum(r){
         +'<div><div class="ctitle" style="margin:0">⏰ รายการยืมเกิน 1 เดือน <span style="font-size:11px;color:'+(noData?'var(--ok)':'var(--er)')+';font-weight:600;text-transform:none;letter-spacing:0">'+(noData?'ปกติ':overMonthLocal.length+' รายการ')+'</span></div>'+_chipLine(_snapChip('ยืมเกิน 30 วัน ยังไม่คืน'))+'</div>'
         +(!noData
           ?'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
-            +_secBtns('om')+'<button id="'+_omUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_omUID+'\');var b=document.getElementById(\''+_omUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
+            +'<button class="btn bg sm" style="font-size:11px" onclick="event.stopPropagation();window._omDeptList()" title="พิมพ์รายการเครื่องที่ยังไม่คืน จัดกลุ่มตามแผนก เพื่อแจ้งนำส่งคืน">📋 รายการแจ้งแผนก</button>'+_secBtns('om')+'<button id="'+_omUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_omUID+'\');var b=document.getElementById(\''+_omUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>'
           +'</div>'
           :'')
       +'</div>'
@@ -17149,6 +17159,199 @@ window._allAppPdf=function(btn){
     h+='</div>';
     _sfpOpen(h,'📋 ข้อมูลการยืมเครื่องมือทั้งหมด','นับตามวันยืม · กางรายละเอียดแยกแผนกครบทุกชนิดเครื่องมือ','ข้อมูลการยืมเครื่องมือทั้งหมด');
   }catch(e){try{console.error('[allAppPdf]',e);}catch(_){}if(window.toast)toast('สร้าง PDF ไม่สำเร็จ: '+e.message,'error');}
+};
+// ═══ §OM-DEPT — รายการ "ยืมเกิน 1 เดือน" จัดกลุ่มตามแผนก เพื่อแจ้งนำส่งคืน (22 ต.ค. 2569) ═══
+// เพิ่มอย่างเดียว: ใช้ตัวกรองเดิมของการ์ด (window._omFiltered) + สถานะรายเครื่องจาก expanded() (นับเฉพาะเครื่องที่ยังไม่คืน)
+// + หน้าพิมพ์เดิม _sfpOpen · กดปุ่ม → กล่องเลือกแผนก/ชนิดเครื่องมือ/เกณฑ์วัน (เลือกได้หลายค่า) → ออกรายการ
+// + ช่องหัวเรื่อง/ข้อความชี้แจง/ผู้ติดต่อ/ผู้ลงนาม (ค่าเริ่มต้นในโค้ด _omDeptDef · ค่าที่แก้จำไว้ใน localStorage ของเครื่อง) และแก้ข้อความบนหน้าพิมพ์ได้ (contenteditable; ตัวเลขในตารางแก้ไม่ได้)
+// + ตารางสรุป: ทุกแผนก = แมทริกซ์ แผนก×ชนิดเครื่องมือ (ชนิดเกิน 8 → "อื่นๆ") · ใบแต่ละแผนก = ตารางสรุปตามชนิด + แถวรวม
+// + โหมด "แยกใบแจ้งตามแผนก" (1 แผนก = 1 หน้า: หัวรายงาน/เรียน/ข้อความ/สรุป/รายการ เฉพาะแผนกนั้น · ตัวเลือกรวมหน้าสรุปภายใน)
+// + รายการแต่ละแผนกแยกกลุ่มตามชนิดเครื่องมือ (หัวกลุ่ม + จำนวนเครื่อง) และตารางสรุปมีคอลัมน์ "แยกตามชนิดเครื่องมือ"
+// ไม่แก้การ์ด/ตาราง/ไฟล์ส่งออกเดิม · ไม่แสดงชื่อผู้ป่วย (เอกสารส่งต่อให้แผนก)
+// ค่าเริ่มต้นของข้อความบนรายงาน (ทุกเครื่องเห็นเหมือนกัน) — ผู้ใช้แก้ได้ และค่าที่แก้จะถูกจำไว้ในเครื่องนั้นแทน
+window._omDeptDef={o:'แผนกบริการเครื่องมือและอุปกรณ์ทางการแพทย์',t:'ใบแจ้งให้นำส่งคืนเครื่องมือแพทย์ยืมเกิน 1 เดือน (ตามแผนกต่างๆ)',m:'กรุณานำส่งเครื่องมือคืนแผนกบริการเครื่องมือและอุปกรณ์ทางการแพทย์/หรือหากต้องการยืมใช้ต่อกรุณาเขียนใบยืมใหม่',c:'ติดต่อสอบถามแผนกบริการเครื่องมือและอุปกรณ์ทางการแพทย์ โทร.52773',s:''};
+window._omDeptItems=function(){
+  var ok={},now=new Date();
+  window._omFiltered().forEach(function(r){ok[S(r.LoanID)]=1;});
+  return expanded().filter(function(i){return i.status==='ACTIVE'&&ok[S(i.loan.LoanID)];}).map(function(i){
+    return{dept:S(i.loan.DeptName)||'ไม่ระบุแผนก',eq:S(i.eq&&i.eq.name)||'-',no:i.borrow?S(i.borrow.EquipmentNo):'',id:S(i.loan.LoanID),ld:i.loan.LoanDate,days:Math.round((now-new Date(i.loan.LoanDate))/86400000)};
+  });
+};
+window._omDeptPrint=function(items,extra,hdr,opt){
+  hdr=hdr||{};opt=opt||{};
+  var G={};
+  items.forEach(function(x){(G[x.dept]=G[x.dept]||[]).push(x);});
+  var depts=Object.keys(G);
+  depts.forEach(function(d){G[d].sort(function(a,b){return b.days-a.days||a.eq.localeCompare(b.eq);});});
+  depts.sort(function(a,b){return G[b][0].days-G[a][0].days||G[b].length-G[a].length||a.localeCompare(b);});
+  var col=function(n){return n>=60?'#dc2626':'#b45309';};
+  // จัดกลุ่มเครื่องในแผนกตามชนิดเครื่องมือ: ในกลุ่มค้างนานสุดก่อน · กลุ่มเรียงตามเครื่องที่ค้างนานสุดของกลุ่ม
+  var grp=function(g){var m={};g.forEach(function(x){(m[x.eq]=m[x.eq]||[]).push(x);});var ks=Object.keys(m);
+    ks.forEach(function(k){m[k].sort(function(a,c){return c.days-a.days||String(a.no).localeCompare(String(c.no),undefined,{numeric:true});});});
+    ks.sort(function(a,c){return m[c][0].days-m[a][0].days||m[c].length-m[a].length||a.localeCompare(c);});
+    return ks.map(function(k){return{n:k,l:m[k]};});};
+  var red=items.filter(function(x){return x.days>=60;}).length;
+  var fl=[],rg=document.getElementById('omRange'),qs=document.getElementById('omSearch');
+  if(rg&&rg.value!=='all'&&rg.selectedOptions[0])fl.push(rg.selectedOptions[0].textContent.trim());
+  if(qs&&qs.value.trim())fl.push('ค้นหา "'+qs.value.trim()+'"');
+  var flAll=fl.concat(extra||[]),flSplit=fl.concat(opt.extra2||[]);
+  var th='<th style="text-align:center;width:34px">#</th>';
+  var T=(hdr.t||'').trim()||window._omDeptDef.t,O=(hdr.o||'').trim();
+  var br=function(x){return esc(x).replace(/\n/g,'<br>');};
+  var CE='contenteditable="true" spellcheck="false" style="outline:none"';
+  var msgBlk=((hdr.m||'').trim()||(hdr.c||'').trim())
+    ?'<div '+CE.replace('style="outline:none"','style="outline:none;border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;margin:0 0 12px;font-size:12px;line-height:1.6"')+'>'
+      +((hdr.m||'').trim()?'<div>'+br(hdr.m.trim())+'</div>':'')
+      +((hdr.c||'').trim()?'<div style="margin-top:6px">ผู้ติดต่อ: <b>'+br(hdr.c.trim())+'</b></div>':'')+'</div>'
+    :'';
+  var sigBlk=(hdr.s||'').trim()
+    ?'<div class="sfp-keep" style="margin-top:28px;text-align:right;font-size:12px"><div '+CE+'>ลงชื่อ ............................................<br>('+br(hdr.s.trim())+')</div></div>'
+    :'';
+  var typesTxt=function(g){return grp(g).map(function(t){return esc(t.n)+' <b>'+t.l.length+'</b>';}).join(' · ');};
+  // รายการของแผนก แยกกลุ่มตามชนิดเครื่องมือ
+  var blocks=function(g){return grp(g).map(function(t){
+    return'<div class="sfp-keep" style="margin:0 0 8px 10px"><div style="font-weight:600;font-size:12px;margin:0 0 3px">▸ '+esc(t.n)+' <span style="font-weight:400;color:#555;font-size:11px">('+t.l.length+' เครื่อง)</span></div>'
+      +'<table><thead><tr>'+th+'<th style="text-align:center">หมายเลขเครื่อง</th><th>เลขใบยืม</th><th style="text-align:center">วันที่ยืม</th><th style="text-align:center">ค้าง (วัน)</th></tr></thead><tbody>'
+      +t.l.map(function(x,k){return'<tr><td style="text-align:center">'+(k+1)+'</td><td style="text-align:center;font-family:var(--mo)">'+(x.no?'#'+esc(x.no):'-')+'</td><td style="font-family:var(--mo)">'+esc(x.id)+'</td><td style="text-align:center">'+esc(S(x.ld))+'</td><td style="text-align:center;font-weight:700;color:'+col(x.days)+'">'+x.days+(x.days>=60?' 🔴':' 🟡')+'</td></tr>';}).join('')
+      +'</tbody></table></div>';}).join('');};
+  // ตารางสรุปทุกแผนก: แมทริกซ์ แผนก × ชนิดเครื่องมือ (ชนิดเกิน 8 รวมเป็น "อื่นๆ")
+  var tc={};items.forEach(function(x){tc[x.eq]=(tc[x.eq]||0)+1;});
+  var tk=Object.keys(tc).sort(function(a,c){return tc[c]-tc[a]||a.localeCompare(c);});
+  var MAXC=8,mcols=tk.length>MAXC?tk.slice(0,MAXC-1):tk,mother=tk.length>MAXC?tk.slice(MAXC-1):[];
+  var cnt=function(g,names){return g.filter(function(x){return names.indexOf(x.eq)>=0;}).length;};
+  var cell=function(n,bold){return'<td style="text-align:center">'+(n?(bold?'<b>'+n+'</b>':n):'<span style="color:#bbb">–</span>')+'</td>';};
+  var hc='text-align:center;font-size:10px';
+  var sumTbl='<table style="margin-bottom:6px"><thead><tr>'+th+'<th>แผนก</th>'
+    +mcols.map(function(c){return'<th style="'+hc+'">'+esc(c)+'</th>';}).join('')+(mother.length?'<th style="'+hc+'">อื่นๆ</th>':'')
+    +'<th style="text-align:center">รวม</th><th style="text-align:center">ค้างนานสุด (วัน)</th><th style="text-align:center">≥ 60 วัน</th></tr></thead><tbody>'
+    +depts.map(function(d,k){var g=G[d];return'<tr><td style="text-align:center">'+(k+1)+'</td><td><b>'+esc(d)+'</b></td>'
+      +mcols.map(function(c){return cell(cnt(g,[c]));}).join('')+(mother.length?cell(cnt(g,mother)):'')
+      +'<td style="text-align:center;font-weight:700">'+g.length+'</td><td style="text-align:center;font-weight:700;color:'+col(g[0].days)+'">'+g[0].days+'</td><td style="text-align:center">'+cell(g.filter(function(x){return x.days>=60;}).length,true).replace(/^<td[^>]*>|<\/td>$/g,'')+'</td></tr>';}).join('')
+    +'<tr style="background:#f3f4f6;font-weight:700"><td></td><td>รวม</td>'
+      +mcols.map(function(c){return'<td style="text-align:center">'+tc[c]+'</td>';}).join('')+(mother.length?'<td style="text-align:center">'+mother.reduce(function(a,c){return a+tc[c];},0)+'</td>':'')
+      +'<td style="text-align:center">'+items.length+'</td><td style="text-align:center;color:'+col(G[depts[0]][0].days)+'">'+G[depts[0]][0].days+'</td><td style="text-align:center;color:#dc2626">'+red+'</td></tr>'
+    +'</tbody></table>'
+    +(mother.length?'<div style="font-size:10px;color:#666;margin:0 0 16px">อื่นๆ = '+esc(mother.join(', '))+'</div>':'<div style="margin:0 0 10px"></div>');
+  var totLine='รวม <b>'+items.length+'</b> เครื่อง จาก <b>'+depts.length+'</b> แผนก · <b style="color:#dc2626">'+red+'</b> เครื่องค้าง ≥ 60 วัน';
+  var css='<style>@media print{@page{size:A4 portrait;margin:12mm}}@media screen{[contenteditable="true"]:hover,[contenteditable="true"]:focus{outline:1px dashed #0284c7!important;background:#f0f9ff}}</style>';
+  var h;
+  if(!opt.split){
+    h=css
+      +'<div class="no-print" style="font-size:11px;color:#0284c7;margin-bottom:8px">✏️ คลิกที่หัวเรื่อง ข้อความชี้แจง ผู้ติดต่อ หรือชื่อผู้ลงนาม เพื่อแก้ไขก่อนพิมพ์ได้ (ตัวเลขในตารางแก้ไม่ได้ เพื่อให้ตรงกับข้อมูลจริง)</div>'
+      +'<div style="font-size:12px;margin-bottom:10px">'+totLine+(flAll.length?'<br>ตัวกรอง: '+esc(flAll.join(' · ')):'')+'</div>'
+      +msgBlk+sumTbl
+      +depts.map(function(d){var g=G[d];
+        return'<div style="margin-bottom:14px"><div class="sfp-head" style="font-weight:700;font-size:13px;margin:0 0 6px;padding:4px 8px;background:#f3f4f6;border-left:4px solid '+col(g[0].days)+'">'+esc(d)+' <span style="font-weight:500;color:#555;font-size:11px">— ค้างคืน '+g.length+' เครื่อง</span></div>'+blocks(g)+'</div>';}).join('')
+      +sigBlk;
+    _sfpOpen(h,(O?'<span '+CE+'>'+esc(O)+'</span><br>':'')+'<span '+CE+'>'+esc(T)+'</span>','เฉพาะเครื่องที่ยังไม่คืน ณ วันที่ออกรายงาน · 🟡 31–59 วัน · 🔴 ≥ 60 วัน · วันนับจากวันที่ยืม',T);
+    return;
+  }
+  // ── โหมดแยกใบแจ้งตามแผนก: 1 แผนก = 1 ใบ (ขึ้นหน้าใหม่) หัวรายงาน/ข้อความ/สรุป/รายการเฉพาะแผนกนั้น ──
+  var now=new Date().toLocaleDateString('th-TH',{year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  var legend='เฉพาะเครื่องที่ยังไม่คืน · 🟡 31–59 วัน · 🔴 ≥ 60 วัน · วันนับจากวันที่ยืม';
+  // สรุปเฉพาะแผนกนั้น: ตารางตามชนิดเครื่องมือ + แถวรวม
+  var deptSum=function(g,rd){var c='text-align:center';
+    return'<div class="sfp-keep" style="margin:0 0 12px"><div style="font-weight:700;font-size:12px;margin:0 0 4px">สรุปค้างคืนของแผนก</div>'
+      +'<table><thead><tr><th>ชนิดเครื่องมือ</th><th style="'+c+'">จำนวน (เครื่อง)</th><th style="'+c+'">ค้างนานสุด (วัน)</th><th style="'+c+'">≥ 60 วัน</th></tr></thead><tbody>'
+      +grp(g).map(function(t){var mx=t.l[0].days;return'<tr><td>'+esc(t.n)+'</td><td style="'+c+';font-weight:700">'+t.l.length+'</td><td style="'+c+';font-weight:700;color:'+col(mx)+'">'+mx+(mx>=60?' 🔴':' 🟡')+'</td><td style="'+c+'">'+t.l.filter(function(x){return x.days>=60;}).length+'</td></tr>';}).join('')
+      +'<tr style="background:#f3f4f6;font-weight:700"><td>รวม</td><td style="'+c+'">'+g.length+'</td><td style="'+c+';color:'+col(g[0].days)+'">'+g[0].days+'</td><td style="'+c+'">'+rd+'</td></tr></tbody></table></div>';};
+  var sheet=function(d,i){
+    var g=G[d],rd=g.filter(function(x){return x.days>=60;}).length;
+    return'<div class="om-sheet" style="'+((i>0||opt.intl)?'break-before:page;page-break-before:always;':'')+'">'
+      +'<div style="font-size:18px;font-weight:700;line-height:1.35">'+(O?'<span '+CE+'>'+esc(O)+'</span><br>':'')+'<span '+CE+'>'+esc(T)+'</span></div>'
+      +'<div style="font-size:11px;color:#666;margin:2px 0 10px">ออกรายงาน: '+esc(now)+' · '+legend+(flSplit.length?'<br>ตัวกรอง: '+esc(flSplit.join(' · ')):'')+'</div>'
+      +'<div '+CE+' style="outline:none;font-size:13px;margin:0 0 8px">เรียน หัวหน้า/ผู้รับผิดชอบ แผนก <b>'+esc(d)+'</b></div>'
+      +msgBlk
+      +deptSum(g,rd)
+      +blocks(g)+sigBlk+'</div>';
+  };
+  h=css+'<style>body>div:first-child{display:none}</style>'
+    +'<div class="no-print" style="font-size:11px;color:#0284c7;margin-bottom:8px">✏️ โหมดแยกใบแจ้งตามแผนก ('+depts.length+' ใบ · 1 แผนกต่อ 1 หน้า) — คลิกข้อความในแต่ละใบเพื่อแก้ไขก่อนพิมพ์ได้ (แก้แยกกันทีละใบ · ตัวเลขในตารางแก้ไม่ได้)</div>'
+    +(opt.intl?'<div class="om-sheet"><div style="font-size:16px;font-weight:700;margin-bottom:4px">สรุปทุกแผนก <span style="color:#dc2626">(ใช้ภายใน — ไม่ต้องแจกแผนก)</span></div>'
+      +'<div style="font-size:11px;color:#666;margin-bottom:8px">ออกรายงาน: '+esc(now)+' · '+legend+(flAll.length?'<br>ตัวกรอง: '+esc(flAll.join(' · ')):'')+'</div>'
+      +'<div style="font-size:12px;margin-bottom:10px">'+totLine+'</div>'+sumTbl+'</div>':'')
+    +depts.map(sheet).join('');
+  _sfpOpen(h,'','',T);
+};
+window._omDeptList=function(){
+  try{
+    if(typeof expanded!=='function'||typeof _sfpOpen!=='function'||typeof window._omFiltered!=='function'){if(window.toast)toast('ยังไม่พร้อมพิมพ์ — กด "🔍 ดู" ก่อน','warning');return;}
+    var all=window._omDeptItems();
+    if(!all.length){if(window.toast)toast('ไม่มีรายการเกิน 1 เดือนที่ยังไม่คืน','warning');return;}
+    var old=document.getElementById('omdlgOv');if(old&&old.parentNode)old.parentNode.removeChild(old);
+    var cnt=function(k){var m={};all.forEach(function(x){m[x[k]]=(m[x[k]]||0)+1;});return m;};
+    var dm=cnt('dept'),em=cnt('eq');
+    var srt=function(m){return Object.keys(m).sort(function(a,b){return m[b]-m[a]||a.localeCompare(b);});};
+    var dl=srt(dm),el=srt(em);
+    var lst=function(g,names,m){return names.map(function(n,k){return'<label style="display:flex;gap:6px;align-items:center;padding:3px 2px;font-size:12px;cursor:pointer"><input type="checkbox" data-g="'+g+'" data-i="'+k+'" checked><span style="flex:1">'+esc(n)+'</span><span style="color:var(--mu);font-size:11px">'+m[n]+' เครื่อง</span></label>';}).join('');};
+    var sm='font-size:11px;padding:2px 8px';
+    var fld='width:100%;box-sizing:border-box;font-size:12px;padding:5px 8px;margin:0 0 6px;background:var(--bg);border:1px solid var(--bd);border-radius:5px;color:var(--tx);font-family:inherit';
+    var HK='meq_om_dept_hdr',sv={};
+    try{sv=JSON.parse(localStorage.getItem(HK)||'{}')||{};}catch(_){sv={};}
+    // ฉบับเก่า (ไม่มี v) เก็บช่องว่างไว้ = ยังไม่เคยตั้ง → ใช้ค่าเริ่มต้น · ฉบับใหม่ (v:2) ช่องที่ล้างว่างไว้ = ตั้งใจเว้นว่าง
+    if(!sv.v)['o','t','m','c','s'].forEach(function(k){if(!sv[k])delete sv[k];});
+    var DF=window._omDeptDef,cur={};['o','t','m','c','s'].forEach(function(k){cur[k]=(sv[k]!==undefined)?sv[k]:DF[k];});
+    var box='border:1px solid var(--bd);border-radius:6px;padding:4px 8px;max-height:170px;overflow:auto;background:var(--bg)';
+    var ov=document.createElement('div');ov.id='omdlgOv';
+    ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px';
+    ov.innerHTML='<div style="background:var(--bg);color:var(--tx);border:1px solid var(--bd);border-radius:10px;width:100%;max-width:560px;max-height:92vh;overflow:auto;padding:16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.4)">'
+      +'<div style="font-weight:700;font-size:14px;margin-bottom:2px">📋 รายการแจ้งแผนก — เลือกสิ่งที่จะออกรายงาน</div>'
+      +'<div style="font-size:11px;color:var(--mu);margin-bottom:10px">เครื่องที่ยังไม่คืนและยืมเกิน 1 เดือน (ตามตัวกรองของหัวข้อนี้) · ติ๊กได้หลายรายการ</div>'
+      +'<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><b style="font-size:12px;flex:1">แผนก <span style="color:var(--mu);font-weight:400">('+dl.length+')</span></b><button type="button" class="btn bg sm" style="'+sm+'" data-a="dAll">เลือกทั้งหมด</button><button type="button" class="btn bg sm" style="'+sm+'" data-a="dNone">ล้าง</button></div>'
+      +'<div style="'+box+'">'+lst('d',dl,dm)+'</div>'
+      +'<div style="display:flex;align-items:center;gap:6px;margin:12px 0 4px"><b style="font-size:12px;flex:1">ชนิดเครื่องมือ <span style="color:var(--mu);font-weight:400">('+el.length+')</span></b><button type="button" class="btn bg sm" style="'+sm+'" data-a="eAll">เลือกทั้งหมด</button><button type="button" class="btn bg sm" style="'+sm+'" data-a="eNone">ล้าง</button></div>'
+      +'<div style="'+box+'">'+lst('e',el,em)+'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px;margin:12px 0 0"><b style="font-size:12px">เกณฑ์วัน</b><select data-a="min" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--bd);border-radius:5px;color:var(--tx)"><option value="0">ทั้งหมด (เกิน 30 วัน)</option><option value="45">ตั้งแต่ 45 วัน</option><option value="60">ตั้งแต่ 60 วัน</option></select></div>'
+      +'<div style="margin:12px 0 0"><label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px"><input type="checkbox" data-a="split"><b>แยกใบแจ้งตามแผนก</b> <span style="color:var(--mu)">(1 แผนกต่อ 1 หน้า · สรุปและรายการเฉพาะแผนกนั้น)</span></label>'
+        +'<label style="display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;margin:4px 0 0 22px;color:var(--mu)"><input type="checkbox" data-a="intl" disabled>รวมหน้าสรุปทุกแผนก (ใช้ภายใน ไม่ต้องแจกแผนก)</label></div>'
+      +'<div style="margin:12px 0 0;border-top:1px solid var(--bd);padding-top:10px"><div style="font-size:12px;font-weight:700;margin-bottom:6px">ข้อความบนรายงาน <span style="font-weight:400;color:var(--mu)">(แก้ได้ · แก้ต่อในหน้าพิมพ์ได้ · จำค่าไว้ในเครื่องนี้)</span><button type="button" class="btn bg sm" style="'+sm+';float:right" data-a="reset" title="กลับเป็นข้อความมาตรฐาน">↺ คืนค่าเริ่มต้น</button></div>'
+        +'<input type="text" data-a="hO" placeholder="ชื่อหน่วยงาน (บรรทัดบนของหัวรายงาน)" style="'+fld+'">'
+        +'<input type="text" data-a="hT" placeholder="หัวเรื่อง (เว้นว่าง = ใช้หัวเรื่องมาตรฐาน)" style="'+fld+'">'
+        +'<textarea data-a="hM" rows="3" placeholder="ข้อความชี้แจง เช่น ขอความอนุเคราะห์นำส่งคืนภายใน … วัน หากยังจำเป็นต้องใช้โปรดแจ้ง…" style="'+fld+';resize:vertical"></textarea>'
+        +'<input type="text" data-a="hC" placeholder="ผู้ติดต่อ / เบอร์โทร" style="'+fld+'">'
+        +'<input type="text" data-a="hS" placeholder="ชื่อผู้ลงนาม (จะมีบรรทัดลงชื่อท้ายรายงาน)" style="'+fld+'"></div>'
+      +'<div data-a="sum" style="margin:12px 0 10px;font-size:12px;color:var(--mu)"></div>'
+      +'<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn bg sm" data-a="cancel">ยกเลิก</button><button type="button" class="btn bp sm" data-a="go">🖨️ ออกรายการ</button></div>'
+      +'</div>';
+    document.body.appendChild(ov);
+    var q=function(a){return ov.querySelector('[data-a="'+a+'"]');};
+    q('hO').value=cur.o;q('hT').value=cur.t;q('hM').value=cur.m;q('hC').value=cur.c;q('hS').value=cur.s;
+    var pick=function(){
+      var D={},E={},mn=parseInt(q('min').value,10)||0;
+      [].forEach.call(ov.querySelectorAll('input[data-g="d"]'),function(c){if(c.checked)D[dl[+c.getAttribute('data-i')]]=1;});
+      [].forEach.call(ov.querySelectorAll('input[data-g="e"]'),function(c){if(c.checked)E[el[+c.getAttribute('data-i')]]=1;});
+      var items=all.filter(function(x){return D[x.dept]&&E[x.eq]&&x.days>=mn;});
+      var nd=Object.keys(D).length,ne=Object.keys(E).length,extra=[],extra2=[];
+      if(nd<dl.length)extra.push('แผนก '+(nd<=4?Object.keys(D).join(', '):nd+' จาก '+dl.length+' แผนก'));
+      if(ne<el.length){var et='เครื่องมือ '+(ne<=4?Object.keys(E).join(', '):ne+' จาก '+el.length+' ชนิด');extra.push(et);extra2.push(et);}
+      if(mn){extra.push('ค้างตั้งแต่ '+mn+' วัน');extra2.push('ค้างตั้งแต่ '+mn+' วัน');}
+      var sp=q('split').checked;
+      return{items:items,extra:extra,extra2:extra2,split:sp,intl:sp&&q('intl').checked};
+    };
+    var upd=function(){
+      var p=pick(),dd={};p.items.forEach(function(x){dd[x.dept]=1;});
+      var ni=q('intl');ni.disabled=!q('split').checked;if(ni.disabled)ni.checked=false;
+      var nds=Object.keys(dd).length;
+      q('sum').textContent=!p.items.length?'ไม่มีรายการตามที่เลือก':(p.split?'จะออก '+nds+' ใบ (แผนกละ 1 ใบ) · รวม '+p.items.length+' เครื่อง'+(p.intl?' + หน้าสรุปภายใน':''):'จะออกรายการ '+p.items.length+' เครื่อง จาก '+nds+' แผนก');
+      q('go').disabled=!p.items.length;
+    };
+    var close=function(){document.removeEventListener('keydown',onKey);if(ov.parentNode)ov.parentNode.removeChild(ov);};
+    var onKey=function(e){var tg=e.target&&e.target.tagName;if(e.key==='Escape'&&tg!=='INPUT'&&tg!=='TEXTAREA')close();};
+    document.addEventListener('keydown',onKey);
+    ov.addEventListener('change',upd);
+    ov.addEventListener('click',function(e){
+      if(e.target===ov){close();return;}
+      var b=e.target.closest?e.target.closest('button[data-a]'):null;if(!b)return;
+      var a=b.getAttribute('data-a');
+      if(a==='cancel'){close();return;}
+      if(a==='reset'){q('hO').value=DF.o;q('hT').value=DF.t;q('hM').value=DF.m;q('hC').value=DF.c;q('hS').value=DF.s;return;}
+      if(a==='go'){var p=pick();if(!p.items.length)return;var hd={o:q('hO').value,t:q('hT').value,m:q('hM').value,c:q('hC').value,s:q('hS').value};try{localStorage.setItem(HK,JSON.stringify(Object.assign({v:2},hd)));}catch(_){}close();window._omDeptPrint(p.items,p.extra,hd,{split:p.split,intl:p.intl,extra2:p.extra2});return;}
+      var g=a.charAt(0),on=a.slice(1)==='All';
+      [].forEach.call(ov.querySelectorAll('input[data-g="'+g+'"]'),function(c){c.checked=on;});
+      upd();
+    });
+    upd();
+  }catch(e){try{console.error('[omDeptList]',e);}catch(_){}if(window.toast)toast('สร้างรายการไม่สำเร็จ: '+e.message,'error');}
 };
 </script>
 </body>
