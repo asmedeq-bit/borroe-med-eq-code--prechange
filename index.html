@@ -12414,6 +12414,7 @@ function dlPage(page,fmt){
   var title=TITLE[page]||(_secK&&_SEC_T[_secK])||page;
   if(fmt==='csv'){dlCSV(rows.map(function(r){return r.map(function(c){return'"'+String(c==null?'':c).replace(/"/g,'""')+'"';}).join(',');}).join('\n'),fname+'.csv');}
   else if(fmt==='xlsx'||fmt==='xls'){
+    if(fmt==='xlsx'&&window.xlsxFromRows){window.xlsxFromRows(fname,rows,'ข้อมูล');return;}   // §XLSX-REAL: ไฟล์ .xlsx จริง (.xls ยังใช้ XML เดิม)
     var xml='<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="h"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1a1a2e" ss:Pattern="Solid"/></Style></Styles><Worksheet ss:Name="ข้อมูล"><Table>'+rows.map(function(row,ri){return'<Row>'+row.map(function(cell){var v=String(cell==null?'':cell).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');var isNum=v!==''&&!isNaN(v)&&ri>0;if(ri===0)return'<Cell ss:StyleID="h"><Data ss:Type="String">'+v+'</Data></Cell>';if(isNum)return'<Cell><Data ss:Type="Number">'+v+'</Data></Cell>';return'<Cell><Data ss:Type="String">'+v+'</Data></Cell>';}).join('')+'</Row>';}).join('')+'</Table></Worksheet></Workbook>';
 // ─────────────────────────────────────────────────────────── §MODAL-TOAST
 // Modal & Toast ใช้ร่วมทั้งระบบ
@@ -12430,6 +12431,7 @@ function dlCSV(content,filename){var blob=new Blob(['\uFEFF'+content],{type:'tex
 // จากปุ่ม XLS อีกหลายจุดทั่วแอป) — ไม่แตะ dlPage() เดิมเลย กันกระทบปุ่มอื่น
 function dlXLS(filenameBase,rows){
   if(!rows||!rows.length){if(window.toast)toast('ไม่มีข้อมูล','warning');return;}
+  if(window.xlsxFromRows){window.xlsxFromRows(filenameBase,rows,'ข้อมูล');return;}   // §XLSX-REAL: ไฟล์ .xlsx จริง (วิธี XML ด้านล่างเป็นทางสำรอง)
   var xml='<?xml version="1.0" encoding="UTF-8"?><?mso-application progid="Excel.Sheet"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="h"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1a1a2e" ss:Pattern="Solid"/></Style></Styles><Worksheet ss:Name="ข้อมูล"><Table>'+rows.map(function(row,ri){return'<Row>'+row.map(function(cell){var v=String(cell==null?'':cell).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');var isNum=v!==''&&!isNaN(v)&&ri>0;if(ri===0)return'<Cell ss:StyleID="h"><Data ss:Type="String">'+v+'</Data></Cell>';if(isNum)return'<Cell><Data ss:Type="Number">'+v+'</Data></Cell>';return'<Cell><Data ss:Type="String">'+v+'</Data></Cell>';}).join('')+'</Row>';}).join('')+'</Table></Worksheet></Workbook>';
   var blob=new Blob([xml],{type:'application/vnd.ms-excel;charset=utf-8'});
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filenameBase+'.xlsx';a.click();
@@ -16548,7 +16550,12 @@ function manDL(fmt){
     return;
   }
 
-  // XLS / XLSX (SpreadsheetML)
+  // XLSX จริง (§XLSX-REAL) — .xls ยังใช้ SpreadsheetML เดิมด้านล่าง
+  if(fmt==='xlsx'&&window.xlsxSave){
+    window.xlsxSave(fname,[{name:'คู่มือระบบยืมคืนเครื่องมือแพทย์',rows:rows.map(function(r){return r.map(function(c){return c==null?'':String(c);});}),hdr:[0],title:[],widths:[12,26,60,26]}]);
+    return;
+  }
+  // XLS (SpreadsheetML)
   var ext = fmt==='xlsx' ? '.xlsx' : '.xls';
   var mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   var xml = '<?xml version="1.0" encoding="UTF-8"?>'
@@ -16722,7 +16729,8 @@ function changePIN(type){
         +'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">'
         +'<select id="swlCmpView" style="'+sel+'" onchange="_swlCmpRender()"><option value="month">รายเดือน (ในปีงบประมาณที่เลือก)</option><option value="year">รายปีงบประมาณ (เทียบหลายปี)</option></select>'
         +'<select id="swlCmpFy" style="'+sel+'" onchange="_swlCmpRender()">'+op+'</select>'
-        +'<select id="swlCmpMet" style="'+sel+'" onchange="_swlCmpRender()"><option value="all">แสดง: รวมทุกงาน</option><option value="give">แสดง: ยืม</option><option value="ret">แสดง: คืน</option><option value="tr">แสดง: โอน</option></select></div>'
+        +'<select id="swlCmpMet" style="'+sel+'" onchange="_swlCmpRender()"><option value="all">แสดง: รวมทุกงาน</option><option value="give">แสดง: ยืม</option><option value="ret">แสดง: คืน</option><option value="tr">แสดง: โอน</option></select>'
+        +'<button class="btn bg sm" onclick="_swlCmpXls()" style="padding:4px 10px;font-size:12px">📊 Excel</button><button class="btn bg sm" onclick="_swlCmpPrt()" style="padding:4px 10px;font-size:12px">🖨️ พิมพ์</button></div>'
         +'<div id="swlCmpMsg" style="font-size:12px;min-height:16px;margin-bottom:6px;color:var(--mu)"></div>'
         +'<div id="swlCmpOut" style="overflow-x:auto"></div>'
         +'<div style="font-size:11px;color:var(--mu);margin-top:8px;line-height:1.6">ℹ️ นับด้วยกติกาเดียวกับตารางด้านบน: ยืม = วันที่กดบันทึกจ่าย · คืน = วันคืนตัวเครื่อง (ผู้รับคืนตามที่ระบบเก็บ) · โอน = วันที่โอน · งานที่ไม่มีวันที่ไม่ถูกนับ · ปีงบประมาณปัจจุบันนับถึงวันนี้ (ยังไม่ครบปี)</div>';
@@ -16791,6 +16799,9 @@ function changePIN(type){
       if(noDate)n.push('⚠️ มี '+noDate+' รายการที่ไม่มีวันที่ในระบบ (ไม่ถูกนับ)');
       if(_swlFull)n.unshift('📦 รวมข้อมูลย้อนหลังทั้งหมด (รวม Archive) แล้ว');
       msg.innerHTML=n.map(esc).join('<br>');
+      // เก็บผลที่วาดไว้ให้ปุ่ม Excel/พิมพ์ (§SWL-CMP-EXP) ส่งออกตรงกับบนจอ
+      window._swlCmpLast={view:view,met:met,fy:fy,cols:cols.map(function(c){return{k:c.k,l:c.l};}),
+        rows:rows.map(function(r){return{n:r.n,v:cols.map(function(c){return val(per[r.n][c.k]);}),t:r.t};}),colTot:colTot,tt:tt,notes:n.slice()};
     };
     function ensure(){
       var p=$('adm-staffwork-mgr');if(!p)return;
@@ -17353,6 +17364,370 @@ window._omDeptList=function(){
     upd();
   }catch(e){try{console.error('[omDeptList]',e);}catch(_){}if(window.toast)toast('สร้างรายการไม่สำเร็จ: '+e.message,'error');}
 };
+</script>
+<script>
+/* §XLSX-REAL — ตัวสร้างไฟล์ .xlsx ของจริง (OOXML ใน zip แบบไม่บีบอัด) ใช้ร่วมทั้งแอป — ไม่พึ่งไลบรารี/อินเทอร์เน็ต
+   เหตุผล: ไฟล์ XML (SpreadsheetML) ที่ตั้งนามสกุล .xlsx — เทคนิคเดิมของ dlXLS / dlPage / คู่มือ — Excel บางรุ่นปฏิเสธ
+   ("file format or extension is not valid") · ตัวนี้เปิดได้ใน Excel / LibreOffice / Google Sheets / มือถือ
+   window.xlsxSave(base,[{name,rows,hdr:[แถวหัวตาราง],title:[แถวชื่อเรื่อง],plain:[แถวไม่ตัดบรรทัด],widths:[ความกว้างคอลัมน์]}]) → ดาวน์โหลด base.xlsx
+   window.xlsxFromRows(base,rows,sheetName) → แบบ dlXLS เดิม: แถวแรก = หัวตาราง, ข้อความที่เป็นตัวเลขจริง → เซลล์ตัวเลข */
+(function(){
+  try{
+    var _crcT=null;
+    function crc32(u){
+      if(!_crcT){_crcT=[];for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);_crcT[n]=c>>>0;}}
+      var c2=0xFFFFFFFF;for(var i=0;i<u.length;i++)c2=_crcT[(c2^u[i])&0xFF]^(c2>>>8);return (c2^0xFFFFFFFF)>>>0;
+    }
+    function zipStore(files){   // files: [{name,data:Uint8Array}] → Uint8Array (zip, method 0 = store)
+      var enc=new TextEncoder(),parts=[],central=[],off=0;
+      var u16=function(v){return[v&255,(v>>>8)&255];},u32=function(v){return[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];};
+      files.forEach(function(f){
+        var nm=enc.encode(f.name),crc=crc32(f.data),sz=f.data.length;
+        var lh=[0x50,0x4B,3,4].concat(u16(20),u16(0x0800),u16(0),u16(0),u16(0x21),u32(crc),u32(sz),u32(sz),u16(nm.length),u16(0));
+        parts.push(new Uint8Array(lh),nm,f.data);
+        central.push(new Uint8Array([0x50,0x4B,1,2].concat(u16(20),u16(20),u16(0x0800),u16(0),u16(0),u16(0x21),u32(crc),u32(sz),u32(sz),u16(nm.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(off))),nm);
+        off+=lh.length+nm.length+sz;
+      });
+      var cs=0;central.forEach(function(p){cs+=p.length;});
+      var end=new Uint8Array([0x50,0x4B,5,6].concat(u16(0),u16(0),u16(files.length),u16(files.length),u32(cs),u32(off),u16(0)));
+      var all=parts.concat(central,[end]),tot=0;all.forEach(function(p){tot+=p.length;});
+      var out=new Uint8Array(tot),o=0;all.forEach(function(p){out.set(p,o);o+=p.length;});return out;
+    }
+    function xmlEsc(v){return String(v==null?'':v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+    function colL(i){var s='';i++;while(i>0){var m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=Math.floor((i-1)/26);}return s;}
+    function sheetName(n,i){var s=String(n==null?'':n).replace(/[\[\]:*?\/\\]/g,' ').replace(/^'+|'+$/g,'').trim().slice(0,31);return s||('Sheet'+(i+1));}
+    // สไตล์: 0 ปกติ · 1 หัวตาราง (ตัวหนาขาว พื้นเข้ม) · 2 ชื่อเรื่อง (ตัวหนาใหญ่) · 3 ตัดบรรทัดอัตโนมัติ (ข้อความยาว)
+    var XSTYLES='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+      +'<fonts count="3"><font><sz val="11"/><name val="Tahoma"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Tahoma"/></font><font><b/><sz val="13"/><name val="Tahoma"/></font></fonts>'
+      +'<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1A1A2E"/><bgColor indexed="64"/></patternFill></fill></fills>'
+      +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+      +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+      +'<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top"/></xf>'
+      +'<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top"/></xf>'
+      +'<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>'
+      +'<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>'
+      +'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    function sheetXML(sh){
+      var hdr=sh.hdr||[],ttl=sh.title||[],pl=sh.plain||[];
+      var x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+      if(sh.widths&&sh.widths.length)x+='<cols>'+sh.widths.map(function(w,i){return '<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>';}).join('')+'</cols>';
+      x+='<sheetData>'+sh.rows.map(function(row,ri){
+        var st=hdr.indexOf(ri)>=0?1:(ttl.indexOf(ri)>=0?2:(pl.indexOf(ri)>=0?0:3));
+        return '<row r="'+(ri+1)+'">'+row.map(function(c,ci){
+          var ref=colL(ci)+(ri+1);
+          if(typeof c==='number'&&isFinite(c))return '<c r="'+ref+'" s="0"><v>'+c+'</v></c>';
+          return '<c r="'+ref+'" s="'+st+'" t="inlineStr"><is><t xml:space="preserve">'+xmlEsc(c)+'</t></is></c>';
+        }).join('')+'</row>';
+      }).join('')+'</sheetData></worksheet>';
+      return x;
+    }
+    window.xlsxSave=function(base,sheets){
+      var enc=new TextEncoder(),H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+      var files=[
+        {name:'[Content_Types].xml',x:H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+          +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+          +sheets.map(function(_,i){return '<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';}).join('')
+          +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'},
+        {name:'_rels/.rels',x:H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+        {name:'xl/workbook.xml',x:H+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+          +sheets.map(function(sh,i){return '<sheet name="'+xmlEsc(sheetName(sh.name,i))+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>';}).join('')+'</sheets></workbook>'},
+        {name:'xl/_rels/workbook.xml.rels',x:H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+          +sheets.map(function(_,i){return '<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>';}).join('')
+          +'<Relationship Id="rId'+(sheets.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},
+        {name:'xl/styles.xml',x:XSTYLES}
+      ].concat(sheets.map(function(sh,i){return{name:'xl/worksheets/sheet'+(i+1)+'.xml',x:sheetXML(sh)};}));
+      var bytes=zipStore(files.map(function(f){return{name:f.name,data:enc.encode(f.x)};}));
+      var blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=base+'.xlsx';a.click();
+      setTimeout(function(){try{URL.revokeObjectURL(a.href);}catch(e){}},3000);
+    };
+    // แบบ dlXLS เดิม: แถวแรก = หัวตาราง · ตัวเลขจริง (เขียนกลับได้เหมือนเดิมเป๊ะ เช่น "12", "3.5") → ตัวเลข · "007"/"0812345678" คงเป็นข้อความ (ไม่ทำเลขศูนย์หน้าหาย)
+    window.xlsxFromRows=function(base,rows,name){
+      var w=[];
+      var out=rows.map(function(r,ri){
+        return r.map(function(c,ci){
+          var v=c==null?'':c;
+          if(ri>0&&typeof v==='string'){var t=v.trim();if(t!==''&&isFinite(Number(t))&&String(Number(t))===t)v=Number(t);}
+          var len=String(v).length;if(len>(w[ci]||0))w[ci]=len;return v;
+        });
+      });
+      window.xlsxSave(base,[{name:name||'ข้อมูล',rows:out,hdr:[0],title:[],widths:w.map(function(n){return Math.max(8,Math.min(60,n+3));})}]);
+    };
+  }catch(e){console.warn('xlsx init:',e.message);}
+})();
+</script>
+<script>
+/* §SWL-DAILY — Admin › ภาระงานเจ้าหน้าที่: ตาราง "รายวัน แยกเจ้าหน้าที่ × ชนิดเครื่องมือ"
+   อ่านอย่างเดียว — ใช้ _swlLast.rows (รายการงานที่ผ่านตัวกรองด้านบนแล้ว) จึงนับกติกาเดียวกับตารางหลักทุกอย่าง
+   ไม่ดึงข้อมูลเพิ่ม ไม่เขียนข้อมูล · ซ้อนพับ เดือน → วัน → เจ้าหน้าที่ (กดชื่อ = ดูรายการรายใบ) · Excel/พิมพ์
+   v3: แต่ละคนเป็นบล็อก บรรทัด ยืม/คืน/โอน → ชนิดเครื่องมือ ×จำนวน (ไม่มีเลขเครื่อง/แผนก/ผู้ป่วยในรายงาน) · Excel 2 ชีต · พิมพ์ = หน้าตาเดียวกับหน้า app
+   ต่อท้าย _swlRender() เดิมโดยห่อไว้ (ไม่แก้ฟังก์ชันเดิม) */
+(function(){
+  try{
+    if(typeof _swlRender!=='function'||typeof _swlBuildEvents!=='function')return;
+    var MNF=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+    var MNS=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    var DW=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+    var $=function(i){return document.getElementById(i);};
+    var st={mOpen:{},dOpen:{},sOpen:{},tOpen:{}};   // sOpen[k]=false → พับบรรทัดงานของคนนั้น · tOpen[k]=true → แสดงรายการรายใบ
+    var cur=null;   // {M:[เดือน...], L:_swlLast}
+
+    function isOpen(map,k,def){return map[k]===undefined?def:!!map[k];}
+    function dayLabel(d){var dt=new Date(d+'T00:00:00Z');return DW[dt.getUTCDay()]+' '+(+d.slice(8,10))+' '+MNS[+d.slice(5,7)-1];}
+    function dmy(d){return d.slice(8,10)+'/'+d.slice(5,7)+'/'+(+d.slice(0,4)+543);}
+    function monthLabel(k){return MNF[+k.slice(5,7)-1]+' '+(+k.slice(0,4)+543);}
+    function sumN(t){return t.give+t.ret+t.tr;}
+    function typesSel(L){return _SWL_TYPES.filter(function(t){return L.types.indexOf(t.k)>=0;});}
+    function bdg(v,c){
+      return v?'<span style="display:inline-block;min-width:34px;text-align:center;padding:1px 8px;border-radius:10px;font-weight:700;background:'+c+'22;color:'+c+'">'+v+'</span>'
+              :'<span style="display:inline-block;min-width:34px;text-align:center;color:var(--mu)">–</span>';
+    }
+    function cmpStaff(a,b){
+      if((a.name===_SWL_NONAME)!==(b.name===_SWL_NONAME))return a.name===_SWL_NONAME?1:-1;
+      if(b.n!==a.n)return b.n-a.n;return a.name.localeCompare(b.name,'th');
+    }
+    function cmpEq(a,b){if(b.n!==a.n)return b.n-a.n;return a.eq.localeCompare(b.eq,'th');}
+
+    // ── สร้างโมเดล เดือน → วัน → เจ้าหน้าที่ → ชนิดเครื่องมือ จากรายการที่ผ่านตัวกรองแล้ว
+    function build(L){
+      var days={};
+      L.rows.forEach(function(e){
+        if(!e.date)return;
+        var d=days[e.date]||(days[e.date]={date:e.date,tot:{give:0,ret:0,tr:0},n:0,sm:{}});
+        d.tot[e.type]++;d.n++;
+        var s=d.sm[e.staff]||(d.sm[e.staff]={name:e.staff,tot:{give:0,ret:0,tr:0},n:0,em:{},ev:[]});
+        s.tot[e.type]++;s.n++;s.ev.push(e);
+        var q=s.em[e.eq]||(s.em[e.eq]={eq:e.eq,give:0,ret:0,tr:0,n:0});q[e.type]++;q.n++;
+      });
+      var ms={};
+      Object.keys(days).forEach(function(k){
+        var d=days[k];
+        d.staff=Object.keys(d.sm).map(function(x){var s=d.sm[x];s.eq=Object.keys(s.em).map(function(y){return s.em[y];}).sort(cmpEq);return s;}).sort(cmpStaff);
+        var mk=k.slice(0,7);
+        var m=ms[mk]||(ms[mk]={key:mk,tot:{give:0,ret:0,tr:0},n:0,days:[],rows:0});
+        m.days.push(d);m.n+=d.n;
+        ['give','ret','tr'].forEach(function(t){m.tot[t]+=d.tot[t];});
+        d.staff.forEach(function(s){m.rows+=s.eq.length;});
+      });
+      var M=Object.keys(ms).sort().reverse().map(function(k){var m=ms[k];m.days.sort(function(a,b){return a.date<b.date?1:-1;});return m;});
+      return M;
+    }
+
+    function totBadges(t,L){return typesSel(L).map(function(ty){return bdg(t[ty.k],ty.c);}).join(' ');}
+    // บรรทัดงานของคนหนึ่งคน: [{ty,items:[{eq,n}]}] เฉพาะประเภทงานที่มีงานจริง เรียงชนิดตามจำนวนมาก→น้อย
+    function workLines(s,L){
+      return typesSel(L).map(function(ty){
+        var items=s.eq.filter(function(q){return q[ty.k]>0;}).map(function(q){return{eq:q.eq,n:q[ty.k]};})
+          .sort(function(a,b){if(b.n!==a.n)return b.n-a.n;return a.eq.localeCompare(b.eq,'th');});
+        return{ty:ty,items:items};
+      }).filter(function(x){return x.items.length;});
+    }
+    function pill(ty,n){return '<span style="display:inline-block;padding:1px 9px;border-radius:10px;font-weight:700;background:'+ty.c+'22;color:'+ty.c+'">'+esc(ty.n)+' '+n+'</span>';}
+    function staffPills(s,L){return typesSel(L).filter(function(t){return s.tot[t.k]>0;}).map(function(t){return pill(t,s.tot[t.k]);}).join(' ');}
+    function lineHTML(w){
+      return '<div style="display:flex;gap:12px;margin:5px 0 0 18px;align-items:baseline">'
+        +'<span style="flex:none;width:44px;text-align:center;border-radius:6px;padding:1px 0;font-weight:700;font-size:12px;background:'+w.ty.c+'22;color:'+w.ty.c+'">'+esc(w.ty.n)+'</span>'
+        +'<div style="line-height:1.9">'+w.items.map(function(i){return '<span style="display:inline-block;margin-right:14px">'+esc(i.eq)+' <b>×'+i.n+'</b></span>';}).join('')+'</div></div>';
+    }
+    function head(act,key,open,label,right,pad){
+      return '<div data-a="'+act+'" data-k="'+esc(key)+'" style="display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;'
+        +'padding:'+(pad||'9px 12px')+';'+(act==='m'||act==='fm'?'background:var(--s2);font-weight:700;':'border-top:1px solid var(--bd);')+'">'
+        +'<span style="width:14px;color:var(--mu)">'+(open?'▾':'▸')+'</span><span>'+label+'</span>'
+        +'<span style="margin-left:auto;display:flex;gap:8px;align-items:center;font-weight:400;font-size:12px;white-space:nowrap">'+right+'</span></div>';
+    }
+    var TH='padding:6px 10px;border-bottom:1px solid var(--bd);font-size:11px;color:var(--mu);font-weight:700;text-align:left';
+    var TD='padding:6px 10px;border-top:1px solid var(--bd);font-size:12.5px;vertical-align:top';
+
+    function detailHTML(s,L){
+      var evs=s.ev.slice().sort(_swlSortEv);
+      var h='<div style="overflow-x:auto;margin:2px 0 8px"><table style="width:100%;border-collapse:collapse;background:var(--bg)"><thead><tr>'
+        +['เวลา','งาน','เครื่องมือ','No.','แผนก','ผู้ป่วย','LoanID'].map(function(x){return '<th style="'+TH+'">'+x+'</th>';}).join('')+'</tr></thead><tbody>';
+      evs.slice(0,300).forEach(function(e){
+        h+='<tr><td style="'+TD+';color:'+(e.time?'var(--tx)':'var(--mu)')+'">'+(e.time?esc(e.time):'—')+'</td><td style="'+TD+'">'+esc(_swlTypeName(e.type))+'</td>'
+          +'<td style="'+TD+'">'+esc(e.eq)+'</td><td style="'+TD+';font-family:var(--mo)">'+esc(e.eqNo||'—')+'</td>'
+          +'<td style="'+TD+'">'+esc(_swlDeptLabel(e))+'</td><td style="'+TD+'">'+esc(e.patient)+'</td><td style="'+TD+';font-family:var(--mo);font-size:11px">'+esc(e.loanId)+'</td></tr>';
+      });
+      if(evs.length>300)h+='<tr><td colspan="7" style="'+TD+';color:var(--mu)">แสดง 300 จาก '+evs.length+' รายการ — ดูครบใน Excel</td></tr>';
+      return h+'</tbody></table></div>';
+    }
+    function dayBody(d,L){
+      var h='';
+      d.staff.forEach(function(s){
+        var sk=d.date+'|'+encodeURIComponent(s.name),so=st.sOpen[sk]!==false,td_=!!st.tOpen[sk];
+        h+='<div style="margin:0 12px 6px 34px;border-top:1px solid var(--bd);padding:8px 4px">'
+          +'<div data-a="s" data-k="'+esc(sk)+'" style="display:flex;align-items:center;gap:12px;font-weight:700;cursor:pointer;user-select:none">'
+          +'<span style="width:14px;color:var(--mu);font-weight:400">'+(so?'▾':'▸')+'</span><span>'+esc(s.name)+'</span>'
+          +'<span style="margin-left:auto;display:flex;gap:6px;align-items:center;font-weight:400;font-size:12px">'+staffPills(s,L)
+          +'<button type="button" class="btn bg sm" data-a="sd" data-k="'+esc(sk)+'" style="padding:1px 8px;font-size:11px;margin-left:6px">'+(td_?'▾':'▸')+' 📋 รายใบ</button></span></div>';
+        if(so)workLines(s,L).forEach(function(w){h+=lineHTML(w);});
+        if(so&&td_)h+='<div style="margin:8px 0 0 18px">'+detailHTML(s,L)+'</div>';
+        h+='</div>';
+      });
+      return h;
+    }
+    function treeHTML(M,L){
+      var h='';
+      M.forEach(function(m,mi){
+        var o=isOpen(st.mOpen,m.key,mi===0);
+        h+='<div style="border:1px solid var(--bd);border-radius:8px;margin-bottom:8px;overflow:hidden">'
+          +head('m',m.key,o,esc(monthLabel(m.key)),'<span style="color:var(--mu)">'+m.days.length+' วันที่มีงาน · รวม '+m.n+' งาน</span>'+totBadges(m.tot,L));
+        if(o)m.days.forEach(function(d){
+          var dop=!!st.dOpen[d.date];
+          h+=head('d',d.date,dop,'<b>'+esc(dayLabel(d.date))+'</b>',d.n+' งาน '+totBadges(d.tot,L),'7px 12px 7px 30px');
+          if(dop)h+=dayBody(d,L);
+        });
+        h+='</div>';
+      });
+      return h;
+    }
+    function draw(){
+      var L=window._swlLast;if(!L)return;
+      var p=$('adm-staffwork-mgr');if(!p)return;
+      var c=$('swlDaily');
+      if(!c){
+        var main=p.querySelector('.card');
+        c=document.createElement('div');c.className='card';c.id='swlDaily';
+        c.innerHTML='<div class="ctitle">📅 รายวัน แยกเจ้าหน้าที่ × ชนิดเครื่องมือ <span style="font-size:11px;color:var(--mu);font-weight:400;text-transform:none;letter-spacing:0">(ใช้ตัวกรองชุดเดียวกับด้านบน · กด ▸ เพื่อกางเดือน/วัน · กดชื่อเจ้าหน้าที่เพื่อพับ/กางบรรทัดงาน)</span></div>'
+          +'<div id="swlDlyBar" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center"></div><div id="swlDlyBody"></div>';
+        if(main&&main.nextSibling)p.insertBefore(c,main.nextSibling);else p.appendChild(c);
+        c.addEventListener('click',onClick);
+      }
+      var M=build(L);cur={M:M,L:L};
+      var bt=function(a,t,on){return '<button class="btn '+(on?'bp':'bg')+' sm" data-a="'+a+'" style="padding:4px 10px;font-size:12px">'+t+'</button>';};
+      $('swlDlyBar').innerHTML=bt('all','▾ กางทั้งหมด')+bt('none','▸ พับทั้งหมด')+bt('xls','📊 Excel')+bt('print','🖨️ พิมพ์');
+      $('swlDlyBody').innerHTML=M.length?treeHTML(M,L)
+        :'<div style="text-align:center;color:var(--mu);padding:14px">ไม่มีข้อมูลในช่วงนี้</div>';
+    }
+
+    function onClick(ev){
+      var el=ev.target.closest?ev.target.closest('[data-a]'):null;if(!el||!cur)return;
+      var a=el.getAttribute('data-a'),k=el.getAttribute('data-k');
+      var M=cur.M;
+      if(a==='m')st.mOpen[k]=!isOpen(st.mOpen,k,M.length&&M[0].key===k);
+      else if(a==='d')st.dOpen[k]=!st.dOpen[k];
+      else if(a==='s')st.sOpen[k]=(st.sOpen[k]===false);
+      else if(a==='sd')st.tOpen[k]=!st.tOpen[k];
+      else if(a==='all'){M.forEach(function(m){st.mOpen[m.key]=true;m.days.forEach(function(d){st.dOpen[d.date]=true;});});}
+      else if(a==='none'){M.forEach(function(m){st.mOpen[m.key]=false;});st.dOpen={};st.sOpen={};st.tOpen={};}
+      else if(a==='xls'){return xls();}
+      else if(a==='print'){return prt();}
+      else return;
+      draw();
+    }
+
+    function xls(){
+      if(!cur||!cur.M.length){if(window.toast)toast('ไม่มีข้อมูล','warning');return;}
+      var L=cur.L,ts=typesSel(L),tn=ts.map(function(t){return t.n;});
+      var days=[];cur.M.slice().reverse().forEach(function(m){m.days.slice().reverse().forEach(function(d){days.push({m:m,d:d});});});   // เก่า→ใหม่
+      // ชีต 1: 1 แถว = 1 วัน × 1 คน (ชนิดเครื่องมือ ×จำนวน ต่อประเภทงาน)
+      var r1=[['รายวัน แยกเจ้าหน้าที่ — ยืม / คืน / โอน (ชนิดเครื่องมือ × จำนวน)'],['ตัวกรอง: '+_swlFilterDesc(L)],[],['วันที่','เจ้าหน้าที่'].concat(tn).concat(['รวมงาน'])];
+      days.forEach(function(x){x.d.staff.forEach(function(s){
+        var wl=workLines(s,L),by={};wl.forEach(function(w){by[w.ty.k]=w.items.map(function(i){return i.eq+' ×'+i.n;}).join(', ');});
+        r1.push([dmy(x.d.date),s.name].concat(ts.map(function(t){return by[t.k]||'';})).concat([s.n]));
+      });});
+      // ชีต 2: 1 แถว = 1 วัน × 1 คน × 1 ชนิดเครื่องมือ (ตัวเลข — ใช้กรอง/Pivot/คัดลอกไปลงต่อ)
+      var r2=[['วันที่','เดือน','เจ้าหน้าที่','ชนิดเครื่องมือ'].concat(tn).concat(['รวม'])];
+      days.forEach(function(x){x.d.staff.forEach(function(s){s.eq.forEach(function(q){
+        r2.push([x.d.date,monthLabel(x.m.key),s.name,q.eq].concat(ts.map(function(t){return q[t.k];})).concat([q.n]));
+      });});});
+      if(!window.xlsxSave){if(window.toast)toast('ตัวสร้างไฟล์ Excel ยังไม่พร้อม','error');return;}
+      window.xlsxSave('รายวัน_แยกคน_'+L.ds+'_'+L.de,[
+        {name:'สรุปรายวัน แยกคน',rows:r1,hdr:[3],title:[0],plain:[1,2],widths:[13,24].concat(ts.map(function(){return 48;})).concat([10])},
+        {name:'ข้อมูลแบนราบ',rows:r2,hdr:[0],title:[],widths:[13,16,24,28].concat(ts.map(function(){return 8;})).concat([8])}
+      ]);
+    }
+    // ── พิมพ์: หน้าตาเดียวกับหน้า app (เดือน → วัน → เจ้าหน้าที่ → บรรทัดยืม/คืน/โอน) ผ่านหน้าพิมพ์กลางของแอป _sfpOpen
+    function prt(){
+      if(!cur||!cur.M.length){if(window.toast)toast('ไม่มีข้อมูล','warning');return;}
+      var L=cur.L,ts=typesSel(L),h='';
+      var pl=function(t,n){return '<span style="display:inline-block;padding:1px 9px;border-radius:10px;font-weight:700;font-size:11px;margin-left:6px;background:'+t.c+'22;color:'+t.c+'">'+esc(t.n)+' '+n+'</span>';};
+      var tp=function(t){return ts.map(function(x){return t[x.k]?pl(x,t[x.k]):'';}).join('');};
+      cur.M.forEach(function(m){
+        h+='<div style="margin:0 0 14px"><div class="sfp-head" style="display:flex;align-items:center;gap:10px;background:#eef2f7;border:1px solid #d6dde8;border-radius:6px;padding:7px 12px;font-weight:700;font-size:14px">'
+          +esc(monthLabel(m.key))+'<span style="margin-left:auto;font-weight:400;font-size:11px;color:#555">'+m.days.length+' วันที่มีงาน · รวม '+m.n+' งาน'+tp(m.tot)+'</span></div>';
+        m.days.forEach(function(d){
+          h+='<div style="margin:8px 0 0 10px"><div class="sfp-head" style="display:flex;align-items:center;gap:10px;border-bottom:1px solid #ccc;padding:4px 2px;font-weight:700;font-size:12.5px">'
+            +esc(dayLabel(d.date))+'<span style="margin-left:auto;font-weight:400;font-size:11px;color:#555">'+d.n+' งาน'+tp(d.tot)+'</span></div>';
+          d.staff.forEach(function(s){
+            h+='<div class="sfp-keep" style="margin:4px 0 0 16px;padding:4px 0;border-bottom:1px dotted #ddd"><div style="display:flex;align-items:center;gap:10px;font-weight:700;font-size:12px">'+esc(s.name)
+              +'<span style="margin-left:auto;font-weight:400">'+tp(s.tot)+'</span></div>';
+            workLines(s,L).forEach(function(w){
+              h+='<div style="display:flex;gap:10px;margin:3px 0 0 14px;align-items:baseline;font-size:11.5px"><span style="flex:none;width:40px;text-align:center;border-radius:5px;padding:0;font-weight:700;background:'+w.ty.c+'22;color:'+w.ty.c+'">'+esc(w.ty.n)+'</span>'
+                +'<div style="line-height:1.7">'+w.items.map(function(i){return '<span style="display:inline-block;margin-right:12px">'+esc(i.eq)+' <b>×'+i.n+'</b></span>';}).join('')+'</div></div>';
+            });
+            h+='</div>';
+          });
+          h+='</div>';
+        });
+        h+='</div>';
+      });
+      _sfpOpen(h,'📅 รายวัน แยกเจ้าหน้าที่ × ชนิดเครื่องมือ',esc(_swlFilterDesc(L)),'รายวัน แยกเจ้าหน้าที่');
+    }
+
+    // ── ต่อท้าย _swlRender() เดิม (ห่อ ไม่แก้ตัวเดิม): วาดใหม่เมื่อตัวหลักคำนวณ _swlLast ชุดใหม่สำเร็จ
+    var orig=window._swlRender,seen=null;
+    window._swlRender=async function(){
+      var r=await orig.apply(this,arguments);
+      try{if(window._swlLast&&(window._swlLast!==seen||!$('swlDaily'))){seen=window._swlLast;draw();}}
+      catch(e){console.warn('swlDaily:',e.message);}
+      return r;
+    };
+  }catch(e){console.warn('swlDaily init:',e.message);}
+})();
+</script>
+<script>
+/* §SWL-CMP-EXP — Excel / พิมพ์ ของการ์ด "📊 สรุปเปรียบเทียบ รายเดือน / รายปีงบประมาณ" (Admin › ภาระงานเจ้าหน้าที่)
+   ส่งออกตามที่เลือกอยู่บนจอเป๊ะ (มุมมอง/ปีงบ/ตัวเลือกแสดง) จาก window._swlCmpLast ที่ §SWL-CMP เก็บไว้ทุกครั้งที่วาดตาราง
+   ไม่คำนวณใหม่ · Excel = .xlsx จริง (xlsxSave) · พิมพ์ = หน้าพิมพ์กลาง _sfpOpen */
+(function(){
+  try{
+    var TY=[['give','ยืม'],['ret','คืน'],['tr','โอน']];
+    function cur(){
+      var C=window._swlCmpLast;
+      if(!C||!C.cols||!C.cols.length||!C.rows){if(window.toast)toast('ยังไม่มีข้อมูล — รอตารางโหลดก่อน','warning');return null;}
+      return C;
+    }
+    function title(C){return C.view==='month'?'รายเดือน ในปีงบประมาณ '+C.fy:'รายปีงบประมาณ (เทียบหลายปี)';}
+    function metName(C){return C.met==='all'?'รวมทุกงาน':(TY.filter(function(t){return t[0]===C.met;})[0]||[0,C.met])[1];}
+    function gT(c){return c.give+c.ret+c.tr;}
+    function yoy(C){   // % เทียบปีก่อน (เฉพาะมุมมองรายปี) — สูตรเดียวกับตารางบนจอ
+      if(C.view!=='year'||C.cols.length<2)return null;
+      return C.cols.slice(1).map(function(c,i){var a=gT(C.colTot[C.cols[i].k]),b=gT(C.colTot[c.k]);return a?Math.round((b-a)/a*100):null;});
+    }
+    function table(C){
+      var head=['เจ้าหน้าที่'].concat(C.cols.map(function(c){return c.l;})).concat(['รวม']);
+      var body=C.rows.map(function(r){return[r.n].concat(r.v).concat([r.t]);});
+      var tot=TY.map(function(t){return['รวม'+t[1]].concat(C.cols.map(function(c){return C.colTot[c.k][t[0]];})).concat([C.tt[t[0]]]);});
+      tot.push(['รวมทุกงาน'].concat(C.cols.map(function(c){return gT(C.colTot[c.k]);})).concat([C.tt.give+C.tt.ret+C.tt.tr]));
+      return{head:head,body:body,tot:tot,yoy:yoy(C)};
+    }
+    window._swlCmpXls=function(){
+      var C=cur();if(!C)return;
+      if(!window.xlsxSave){if(window.toast)toast('ตัวสร้างไฟล์ Excel ยังไม่พร้อม','error');return;}
+      var T=table(C),rows=[['สรุปเปรียบเทียบ — '+title(C)],['แสดง: '+metName(C)],[],T.head];
+      T.body.forEach(function(r){rows.push(r);});
+      T.tot.forEach(function(r){rows.push(r);});
+      if(T.yoy)rows.push(['เทียบปีก่อน (%)',''].concat(T.yoy.map(function(p){return p===null?'':p;})).concat(['']));
+      rows.push([]);var noteStart=rows.length;C.notes.forEach(function(n){rows.push([n]);});
+      var plain=[1,2,rows.length>noteStart?noteStart-1:-1];for(var i=noteStart;i<rows.length;i++)plain.push(i);
+      window.xlsxSave('สรุปเปรียบเทียบ_'+(C.view==='month'?'รายเดือน_ปีงบ'+C.fy:'รายปีงบประมาณ')+'_'+metName(C),[{
+        name:'สรุปเปรียบเทียบ',rows:rows,hdr:[3],title:[0],plain:plain,
+        widths:[26].concat(C.cols.map(function(){return 11;})).concat([10])}]);
+    };
+    window._swlCmpPrt=function(){
+      var C=cur();if(!C)return;
+      var T=table(C),th='padding:5px 8px;border:1px solid #ddd;background:#f3f4f6;font-size:11px;text-align:right',td='padding:5px 8px;border:1px solid #ddd;font-size:11.5px;text-align:right';
+      var num=function(v,b){return '<td style="'+td+(b?';font-weight:700':'')+(v?'':';color:#9ca3af')+'">'+(v||'–')+'</td>';};
+      var h='<table><thead><tr>'+T.head.map(function(x,i){return '<th style="'+th+(i?'':';text-align:left')+'">'+esc(x)+'</th>';}).join('')+'</tr></thead><tbody>';
+      T.body.forEach(function(r){h+='<tr><td style="'+td+';text-align:left">'+esc(r[0])+'</td>'+r.slice(1).map(function(v,i,a){return num(v,i===a.length-1);}).join('')+'</tr>';});
+      T.tot.forEach(function(r,ri){h+='<tr style="background:#f9fafb"><td style="'+td+';text-align:left;font-weight:700">'+esc(r[0])+'</td>'+r.slice(1).map(function(v){return num(v,true);}).join('')+'</tr>';});
+      if(T.yoy)h+='<tr><td style="'+td+';text-align:left;color:#6b7280">เทียบปีก่อน</td><td style="'+td+'"></td>'+T.yoy.map(function(p){return '<td style="'+td+';color:'+(p>0?'#15803d':p<0?'#dc2626':'#6b7280')+'">'+(p===null?'–':(p>0?'+':'')+p+'%')+'</td>';}).join('')+'<td style="'+td+'"></td></tr>';
+      h+='</tbody></table>';
+      if(C.notes.length)h+='<div style="margin-top:10px;font-size:10.5px;color:#6b7280;line-height:1.6">'+C.notes.map(esc).join('<br>')+'</div>';
+      _sfpOpen('<div class="card">'+h+'</div>','📊 สรุปเปรียบเทียบ — '+esc(title(C)),'แสดง: '+esc(metName(C)),'สรุปเปรียบเทียบ');
+    };
+  }catch(e){console.warn('swlCmpExp init:',e.message);}
+})();
 </script>
 </body>
 </html>
