@@ -828,10 +828,9 @@ function toggleTheme(){
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div class="ctitle" style="margin:0">📅 สรุปรายการยืมเครื่องมือประจำวัน</div>
       <div style="display:flex;gap:4px;align-self:flex-end">
-        <button class="btn bg sm" onclick="dlPage('daily','csv')">CSV</button>
-        <button class="btn bg sm" onclick="dlPage('daily','xlsx')">XLS</button>
-        <button class="btn bg sm" onclick="dlPage('daily','xlsx')">XLSX</button>
-        <button class="btn bg sm" onclick="dlPage('daily','pdf')">PDF</button>
+        <button class="btn bg sm" onclick="dlPage('daily','csv')" title="ตารางแบนราบ ตามตัวกรองบนจอ">CSV</button>
+        <button class="btn bg sm" onclick="_dailyXls()" title="Excel (.xlsx) แยกตามชนิดเครื่องมือ ตามตัวกรองบนจอ + ชีตข้อมูลแบนราบ">📊 Excel</button>
+        <button class="btn bg sm" onclick="_dailyPrt()" title="พิมพ์ / บันทึกเป็น PDF แบบหน้า app ตามตัวกรองบนจอ ครบทุกแถว">🖨️ พิมพ์/PDF</button>
         <button class="btn bp sm" onclick="loadAll()">🔄 Refresh</button>
         <span id="dailyTs" style="font-size:11px;color:var(--mu);align-self:center;margin-left:4px"></span>
       </div>
@@ -928,10 +927,12 @@ function toggleTheme(){
         <span style="font-size:11px;color:var(--mu)">ถึง</span>
         <input type="date" id="repairDateTo" onchange="repairClearFYSelect();renderRepair()" style="width:135px">
       </span>
+      <select id="repairSort" onchange="renderRepair()" style="min-width:130px" title="เรียงตาราง"><option value="">เรียง: ส่งใหม่→เก่า</option><option value="aging">เรียง: ค้างนานสุดก่อน</option></select>
       <input type="text" id="repairSearch" placeholder="ค้นหาเลข/NVH/อาการ/ผู้รายงาน..." oninput="renderRepair()" style="flex:1;min-width:160px">
       <button class="btn bg sm" onclick="repairClearFilters()">✕ ล้าง</button>
       <button class="btn bg sm" onclick="repairExportCSV()">⬇ Export CSV</button>
-      <button class="btn bg sm" onclick="repairExportPDF()">📄 Export PDF</button>
+      <button class="btn bg sm" onclick="_repairXls()" title="Excel (.xlsx) ตามตัวกรองปัจจุบัน: ชีตสรุป + ชีตรายการ">📊 Excel</button>
+      <button class="btn bg sm" onclick="repairExportPDF()" title="พิมพ์ / บันทึกเป็น PDF แบบหน้า app ตามตัวกรองปัจจุบัน ครบทุกแถว">🖨️ พิมพ์/PDF</button>
       <button class="btn bg sm" onclick="document.getElementById('repairImportFile').click()" title="นำเข้าไฟล์ CSV รูปแบบเดียวกับที่ Export ออกไป — จับคู่เครื่องด้วยชนิด+เลขเครื่องกับทะเบียนที่มีอยู่ ข้ามแถวที่หาเครื่องไม่เจอหรือมีอยู่แล้ว">⬆ Import CSV</button>
       <input type="file" id="repairImportFile" accept=".csv" style="display:none" onchange="repairImportCSV(this)">
     </div>
@@ -945,6 +946,7 @@ function toggleTheme(){
         <div id="repairLineChart" style="overflow-x:auto"></div>
       </div>
     </div>
+    <div id="repairInsights" style="margin-bottom:14px"></div>
     <div style="background:var(--s2);border-radius:8px;overflow:hidden">
       <div id="repairTableWrap" style="overflow-x:auto"></div>
       <div id="repairPager" style="display:flex;align-items:center;justify-content:center;gap:10px;padding:10px 0"></div>
@@ -7120,6 +7122,41 @@ function _buildDailyPager(eqName,curPage,totalPages,total,from){
 
 window._dailyGo=function(eqName,p){_dailyPages[eqName]=p;renderDaily();};
 
+// §DAILY-EXP — ตัวกรอง/จัดกลุ่มของหน้า "สรุปรายการยืมประจำวัน" ชุดเดียว: หน้าจอ + ปุ่ม export ทุกปุ่มใช้ร่วมกัน (ตรงกับที่เห็นบนจอเสมอ)
+function _dailyVals(){
+  var g=function(id){var el=document.getElementById(id);return el?el.value:'';};
+  return{type:g('dailyFilter'),search:g('dailySearch').toLowerCase().trim(),dept:g('dailyDept'),ds:g('dailyDateS'),de:g('dailyDateE')};
+}
+// รายการที่กำลังยืม ตามตัวกรอง ค้นหา/แผนก/วันที่ยืม (ยังไม่กรองชนิด — การ์ดสรุปด้านบนใช้ชุดนี้)
+function _dailyActiveItems(){
+  var v=_dailyVals();
+  return expanded().filter(function(i){
+    if(i.status!=='ACTIVE')return false;
+    if(v.dept&&S(i.loan.DeptName)!==v.dept)return false;
+    var ld=i.loan.LoanDate;
+    if(v.ds&&ld&&ld<v.ds)return false;
+    if(v.de&&ld&&ld>v.de)return false;
+    if(v.search){var txt=(i.borrow?S(i.borrow.EquipmentNo):'')+' '+S(i.loan.PatientName)+' '+S(i.loan.BorrowerName)+' '+(i.borrow?S(i.borrow.GiverName||''):'')+' '+S(i.loan.DeptName)+' '+S(i.eq.name);if(!txt.toLowerCase().includes(v.search))return false;}
+    return true;
+  });
+}
+// จัดกลุ่มตามชนิด (ตามตัวกรองชนิด) เรียงตาม EQL และเรียงเลขเครื่อง — เหมือนที่แสดงบนจอ (ก่อนแบ่งหน้า)
+function _dailyGroups(active){
+  var v=_dailyVals(),grp={};
+  active.forEach(function(item){var k=S(item.eq.name);if(!grp[k])grp[k]=[];grp[k].push(item);});
+  var keys=v.type?(grp[v.type]?[v.type]:[]):EQL.filter(function(e){return grp[e];});
+  return keys.map(function(name){
+    var items=grp[name].slice().sort(function(a,b){
+      var an=parseInt((a.borrow?S(a.borrow.EquipmentNo):'').replace(/\D/g,''))||9999;
+      var bn=parseInt((b.borrow?S(b.borrow.EquipmentNo):'').replace(/\D/g,''))||9999;
+      return an-bn;
+    });
+    items=_exactMatchFirst(items,v.search,function(i){
+      return[S(i.loan.PatientName),S(i.loan.BorrowerName),S(i.loan.DeptName),i.borrow?S(i.borrow.EquipmentNo):'',i.borrow?S(i.borrow.GiverName||''):''];
+    });
+    return{name:name,items:items};
+  });
+}
 function renderDaily(){
   var cont=document.getElementById('dailyCont');if(!cont)return;
   if(loans===null){cont.innerHTML='<div class="lding"><div class="spin"></div></div>';return;}
@@ -7130,31 +7167,15 @@ function renderDaily(){
   var dateE=document.getElementById('dailyDateE')?document.getElementById('dailyDateE').value:'';
   var ts=document.getElementById('dailyTs');if(ts)ts.textContent='อัปเดต: '+new Date().toLocaleTimeString('th-TH');
   var now=new Date();
-  var active=expanded().filter(function(i){
-    if(i.status!=='ACTIVE')return false;
-    if(deptF&&S(i.loan.DeptName)!==deptF)return false;
-    var ld=i.loan.LoanDate;
-    if(dateS&&ld&&ld<dateS)return false;
-    if(dateE&&ld&&ld>dateE)return false;
-    if(search){var txt=(i.borrow?S(i.borrow.EquipmentNo):'')+' '+S(i.loan.PatientName)+' '+S(i.loan.BorrowerName)+' '+(i.borrow?S(i.borrow.GiverName||''):'')+' '+S(i.loan.DeptName)+' '+S(i.eq.name);if(!txt.toLowerCase().includes(search))return false;}
-    return true;
-  });
-  var grp={};active.forEach(function(item){var k=S(item.eq.name);if(!grp[k])grp[k]=[];grp[k].push(item);});
-  var keys=filter?(grp[filter]?[filter]:[]):EQL.filter(function(e){return grp[e];});
+  var active=_dailyActiveItems();
+  var _dg=_dailyGroups(active),grp={},keys=_dg.map(function(g){grp[g.name]=g.items;return g.name;});
   var _dMap={};
   renderDailySumCards(active);
   _dailyCardSync();
   if(!keys.length){cont.innerHTML='<div style="text-align:center;padding:50px 20px"><div style="font-size:42px;margin-bottom:9px">✅</div><div style="font-size:14px;color:var(--mu)">ไม่มีรายการกำลังยืมในขณะนี้</div></div>';return;}
 
   var html=keys.map(function(eqName){
-    var allItems=(grp[eqName]||[]).slice().sort(function(a,b){
-      var an=parseInt((a.borrow?S(a.borrow.EquipmentNo):'').replace(/\D/g,''))||9999;
-      var bn=parseInt((b.borrow?S(b.borrow.EquipmentNo):'').replace(/\D/g,''))||9999;
-      return an-bn;
-    });
-    allItems=_exactMatchFirst(allItems,search,function(i){
-      return[S(i.loan.PatientName),S(i.loan.BorrowerName),S(i.loan.DeptName),i.borrow?S(i.borrow.EquipmentNo):'',i.borrow?S(i.borrow.GiverName||''):''];
-    });
+    var allItems=grp[eqName]||[];
     var total=allItems.length;
     var totalPages=Math.max(1,Math.ceil(total/_dailyPageSize));
     if(!_dailyPages[eqName]||_dailyPages[eqName]>totalPages)_dailyPages[eqName]=1;
@@ -12347,7 +12368,7 @@ function getPageData(page){
     });
     rows.push(['LoanID','วันที่ยืม','ผู้ยืม','แผนก','ผู้ป่วย','เครื่องมือ','หมายเลขเครื่อง','อุปกรณ์ประกอบ','วันที่ใช้','สถานะ','ผู้ให้ยืม','ผู้รับคืน','วันที่คืน','เหตุผลคืน','รายละเอียดเหตุผลคืน','ประวัติโอน']);
     items.forEach(function(item){var ld=item.loan.LoanDate,startD=ld?new Date(ld):null,_mrd=_machineRetDate(item),endD=_mrd?new Date(_mrd):now;var days=startD&&(item.status==='ACTIVE'||item.status==='RETURNED'||item.status==='ACC_PENDING')?Math.max(0,Math.round((endD-startD)/86400000)):'-';var accs=item.borrow&&Array.isArray(item.borrow.Accessories)?item.borrow.Accessories:[];var th=item.borrow&&Array.isArray(item.borrow.TransferHistory)?item.borrow.TransferHistory:[];rows.push([S(item.loan.LoanID),ld||'',S(item.loan.BorrowerName),S(item.loan.DeptName),S(item.loan.PatientName),S(item.eq.name),item.borrow?S(item.borrow.EquipmentNo||''):'-',accs.length||0,days,({PENDING:'รอดำเนินการจ่าย',ACTIVE:'ยืม',RETURNED:'คืน',ACC_PENDING:'คืน (อุปกรณ์ค้าง)',CANCELLED:'ยกเลิก'}[item.status]||item.status),item.borrow?S(item.borrow.GiverName||''):'-',item.borrow?S(item.borrow.ReceiverName||''):'-',item.borrow?(_machineRetDate(item)||S(item.borrow.ReturnDate||'')):'-',item.borrow?S(item.borrow.ReturnRemark||''):'-',item.borrow?S(item.borrow.ReturnDetail||''):'-',th.map(function(t){return t.date+':'+S(t.toDept);}).join('→')]);});
-  }else if(page==='daily'){var filter=document.getElementById('dailyFilter').value;var activeItems=exp.filter(function(i){return i.status==='ACTIVE'&&(!filter||S(i.eq.name)===filter);});rows.push(['หมายเลขเครื่อง','ชนิดเครื่องมือ','วันที่ยืม','แผนก','ผู้ป่วย','วันที่ใช้','ผู้ให้ยืม','ประวัติโอน','อุปกรณ์ประกอบ']);activeItems.forEach(function(item){var ld=item.loan.LoanDate||'-',days=ld!=='-'?Math.max(0,Math.round((now-new Date(ld))/86400000)):'-';var th=item.borrow&&item.borrow.TransferHistory?item.borrow.TransferHistory:[];rows.push([item.borrow?S(item.borrow.EquipmentNo||'—'):'—',S(item.eq.name),ld,S(item.loan.DeptName),S(item.loan.PatientName),days,item.borrow?S(item.borrow.GiverName||'-'):'-',th.map(function(t){return S(t.toDept)+'('+t.date+')';}).join('→'),(item.borrow&&item.borrow.Accessories?item.borrow.Accessories.length:0)]);});}
+  }else if(page==='daily'){var activeItems=[];_dailyGroups(_dailyActiveItems()).forEach(function(g){activeItems=activeItems.concat(g.items);});/* §DAILY-EXP: ตามตัวกรองทุกช่อง + เรียงเหมือนบนจอ */rows.push(['หมายเลขเครื่อง','ชนิดเครื่องมือ','วันที่ยืม','แผนก','ผู้ป่วย','วันที่ใช้','ผู้ให้ยืม','ประวัติโอน','อุปกรณ์ประกอบ']);activeItems.forEach(function(item){var ld=item.loan.LoanDate||'-',days=ld!=='-'?Math.max(0,Math.round((now-new Date(ld))/86400000)):'-';var th=item.borrow&&item.borrow.TransferHistory?item.borrow.TransferHistory:[];rows.push([item.borrow?S(item.borrow.EquipmentNo||'—'):'—',S(item.eq.name),ld,S(item.loan.DeptName),S(item.loan.PatientName),days,item.borrow?S(item.borrow.GiverName||'-'):'-',th.map(function(t){return S(t.toDept)+'('+t.date+')';}).join('→'),(item.borrow&&item.borrow.Accessories?item.borrow.Accessories.length:0)]);});}
   else if(page==='uaMonth'||page==='uaDay'||page==='uaCmpM'||page==='uaCmpY'){rows=_uaExportRows(page);}
   else if(page==='hfncCmp'){rows=_hcExportRows();}
   else if(page.indexOf('sec_')===0&&_SEC_T[page.slice(4)]){rows=_secRows(page.slice(4));}   // ปุ่ม CSV/XLS รายหัวข้อหน้าสถิติ   // เทียบยี่ห้อ/รุ่น HFNC รายเดือน/รายปี   // หัวข้อการใช้งานรายวัน/เดือน/ปี
@@ -14676,6 +14697,91 @@ window.repairClearFYSelect=function(){
   if(sel)sel.value='';
 };
 
+// §REPAIR-EXP — ตัวช่วยกลางของหน้า "งานส่งซ่อม": ระยะเวลา/ค้าง/ซ่อมซ้ำ/สถิติ — หน้าจอและ export ใช้ชุดเดียวกัน (ตามตัวกรองปัจจุบัน)
+function _repairToday(){return typeof localDateStr==='function'?localDateStr(new Date()):new Date().toISOString().slice(0,10);}
+function _repairDayDiff(a,b){
+  if(!a||!b)return null;
+  var p=String(a).slice(0,10).split('-'),q=String(b).slice(0,10).split('-');
+  if(p.length<3||q.length<3)return null;
+  var x=Date.UTC(+p[0],+p[1]-1,+p[2]),y=Date.UTC(+q[0],+q[1]-1,+q[2]);
+  if(isNaN(x)||isNaN(y))return null;
+  return Math.round((y-x)/86400000);
+}
+// ระยะเวลาของงาน: ยังไม่รับคืน = ค้างมาแล้วกี่วัน (ถึงวันนี้) · รับคืนแล้ว = ใช้เวลาซ่อมกี่วัน (ส่ง→รับคืน) · วันไม่ครบ/ย้อนหลัง = null
+function _repairDur(j){
+  var s=j.sent?j.sent.event_date:'';
+  if(!j.returned){if(!s)return{kind:'',n:null};var n=_repairDayDiff(s,_repairToday());return{kind:'pending',n:(n===null||n<0)?null:n};}   // วันที่ส่งยังมาไม่ถึง → ไม่นับอายุ (มี ⚠️ เตือนแทน)
+  if(!s)return{kind:'done',n:null};
+  var d=_repairDayDiff(s,j.returned.event_date);
+  return{kind:'done',n:(d===null||d<0)?null:d};
+}
+function _repairAgeColor(n){return n>30?'var(--er)':n>14?'var(--wn)':'var(--ok)';}
+function _repairIsFuture(j){var t=_repairToday();return !!((j.sent&&j.sent.event_date>t)||(j.returned&&j.returned.event_date>t));}
+function _repairStats(list){
+  var o={total:list.length,pending:0,returned:0,byType:[],byMonth:[],over:0,warn:0,oldest:null,avgDone:null,medDone:null,nDone:0,repeat:[],future:0};
+  var tt={},tm={},done=[],unit={};
+  list.forEach(function(j){
+    var t=_repairJobType(j),d=_repairDur(j),sd=j.sent?j.sent.event_date:(j.returned?j.returned.event_date:'');
+    if(j.returned)o.returned++;else o.pending++;
+    if(t){var a=tt[t]=tt[t]||{total:0,pending:0,returned:0};a.total++;if(j.returned)a.returned++;else a.pending++;}
+    if(sd){var m=tm[sd.slice(0,7)]=tm[sd.slice(0,7)]||{total:0,pending:0,returned:0};m.total++;if(j.returned)m.returned++;else m.pending++;}
+    if(d.kind==='pending'&&d.n!==null){
+      if(d.n>30)o.over++;else if(d.n>14)o.warn++;
+      if(!o.oldest||d.n>o.oldest.n)o.oldest={n:d.n,type:t,no:_repairJobNo(j)};
+    }
+    if(d.kind==='done'&&d.n!==null)done.push(d.n);
+    if(_repairIsFuture(j))o.future++;
+    var src=j.sent||j.returned,key=t+'\u0001'+_repairJobNo(j);
+    var u=unit[key]=unit[key]||{type:t,no:_repairJobNo(j),n:0,last:'',unitId:src?src.unit_id:null};
+    u.n++;if(sd>u.last)u.last=sd;
+  });
+  o.byType=Object.keys(tt).map(function(k){return{name:k,total:tt[k].total,pending:tt[k].pending,returned:tt[k].returned};}).sort(function(a,b){return b.total-a.total;});
+  o.byMonth=Object.keys(tm).sort().map(function(k){return{ym:k,total:tm[k].total,pending:tm[k].pending,returned:tm[k].returned};});
+  o.repeat=Object.keys(unit).map(function(k){return unit[k];}).filter(function(u){return u.n>=2;}).sort(function(a,b){return b.n-a.n||(a.last<b.last?1:-1);});
+  o.nDone=done.length;
+  if(done.length){
+    var sorted=done.slice().sort(function(a,b){return a-b;}),mid=Math.floor(sorted.length/2);
+    o.avgDone=Math.round(done.reduce(function(s,x){return s+x;},0)/done.length*10)/10;
+    o.medDone=sorted.length%2?sorted[mid]:Math.round((sorted[mid-1]+sorted[mid])/2*10)/10;
+  }
+  return o;
+}
+function _repairApplySort(list){
+  var so=document.getElementById('repairSort'),mode=so?so.value:'';
+  if(mode!=='aging')return list;
+  list.sort(function(a,b){
+    var pa=!a.returned,pb=!b.returned;
+    if(pa!==pb)return pa?-1:1;
+    var da=a.sent?a.sent.event_date:(a.returned?a.returned.event_date:''),db=b.sent?b.sent.event_date:(b.returned?b.returned.event_date:'');
+    return pa?(da<db?-1:da>db?1:0):(da<db?1:da>db?-1:0);   // งานค้าง: เก่าสุดก่อน · รับคืนแล้ว: ใหม่สุดก่อน
+  });
+  return list;
+}
+function _repairRenderInsights(list){
+  var el=document.getElementById('repairInsights');if(!el)return;
+  var st=_repairStats(list);
+  var chip=function(val,lbl,sub,color){return'<div style="background:var(--bg);border:1px solid var(--bd);border-left:3px solid '+color+';border-radius:6px;padding:8px 12px">'
+    +'<div style="font-size:16px;font-weight:700;color:'+color+'">'+val+'</div><div style="font-size:10px;color:var(--mu)">'+lbl+'</div>'+(sub?'<div style="font-size:10px;color:var(--mu);margin-top:2px">'+sub+'</div>':'')+'</div>';};
+  var chips=chip(st.oldest?st.oldest.n+' วัน':'—','ค้างนานสุด',st.oldest?esc(st.oldest.type)+' No.'+esc(st.oldest.no):'ไม่มีงานค้าง',st.oldest?_repairAgeColor(st.oldest.n):'var(--mu)')
+    +chip(st.over,'ค้างเกิน 30 วัน','',st.over?'var(--er)':'var(--mu)')
+    +chip(st.warn,'ค้าง 15–30 วัน','',st.warn?'var(--wn)':'var(--mu)')
+    +chip(st.nDone?st.avgDone+' วัน':'—','ซ่อมเสร็จเฉลี่ย',st.nDone?'มัธยฐาน '+st.medDone+' · จาก '+st.nDone+' งาน'+(st.nDone<10?' <b style="color:var(--wn)">⚠️ ข้อมูลน้อย</b>':''):'ยังไม่มีงานที่มีทั้งวันส่งและวันรับคืน','var(--ac)');
+  if(st.future)chips+=chip(st.future,'วันที่ยังมาไม่ถึง','ตรวจว่าพิมพ์ผิดไหม (มี ⚠️ ในตาราง)','var(--wn)');
+  var rep='';
+  if(!st.repeat.length)rep='<div style="color:var(--mu);font-size:12px;padding:6px 0">ไม่มีเครื่องที่ซ่อมซ้ำในช่วงที่กรอง</div>';
+  else{
+    rep=st.repeat.slice(0,10).map(function(u){
+      return'<div style="display:flex;align-items:center;gap:10px;padding:4px 0;border-top:1px solid var(--bd);font-size:12px">'
+        +'<span style="flex:1"><b>'+esc(u.type)+'</b> No.'+esc(u.no)+'</span><span style="font-family:var(--mo);font-weight:700;color:var(--wn)">'+u.n+' ครั้ง</span>'
+        +'<span style="color:var(--mu);font-size:11px">ล่าสุด '+esc(u.last||'—')+'</span>'
+        +(u.unitId!=null?'<button class="abt" onclick="invShowMaintHist('+u.unitId+')" title="ประวัติซ่อมทั้งหมดของเครื่องนี้">📋 ประวัติ</button>':'')+'</div>';
+    }).join('')+(st.repeat.length>10?'<div style="font-size:11px;color:var(--mu);padding-top:4px">…และอีก '+(st.repeat.length-10)+' เครื่อง (ดูทั้งหมดใน Excel)</div>':'');
+  }
+  el.innerHTML='<div style="background:var(--s2);border-radius:8px;padding:10px 12px">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--mu);margin-bottom:8px">อายุงานค้าง / ระยะเวลาซ่อม <span style="font-weight:400">(ตามตัวกรองปัจจุบัน — ต่างจากการ์ดด้านบนที่นับทุกรายการ)</span></div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px">'+chips+'</div>'
+    +'<details'+(st.repeat.length?' open':'')+'><summary style="cursor:pointer;font-size:11px;font-weight:700;color:var(--mu)">🔁 เครื่องที่ซ่อมซ้ำ ('+st.repeat.length+' เครื่อง)</summary><div style="margin-top:6px">'+rep+'</div></details></div>';
+}
 function _repairRenderAll(){
   var jobs=_repairJobsCache||[];
   var typeF=(document.getElementById('repairFilterType')||{}).value||'';
@@ -14706,6 +14812,7 @@ function _repairRenderAll(){
     return da<db?1:da>db?-1:0;
   });
 
+  _repairApplySort(filtered);
   var total=jobs.length,pending=jobs.filter(function(j){return!j.returned;}).length,returned=total-pending;
   var typeSet={};jobs.forEach(function(j){var t=_repairJobType(j);if(t)typeSet[t]=1;});
   var typeCount=Object.keys(typeSet).length;
@@ -14758,11 +14865,18 @@ function _repairRenderAll(){
     }
   }
 
+  _repairRenderInsights(filtered);
   _repairFilteredCache=filtered;
   _repairPage=1;
   _repairRenderTablePage();
 }
 
+function _repairDurHtml(j){
+  var d=_repairDur(j);
+  if(d.n===null)return'<span style="color:var(--mu)">—</span>';
+  return d.kind==='pending'?'<span style="color:'+_repairAgeColor(d.n)+';font-weight:700" title="ค้างมาแล้ว (ส่งซ่อม → วันนี้)">ค้าง '+d.n+' วัน</span>'
+    :'<span style="color:var(--mu)" title="ใช้เวลาซ่อม (ส่งซ่อม → รับคืน)">'+d.n+' วัน</span>';
+}
 function _repairRenderTablePage(){
   var filtered=_repairFilteredCache||[];
   var total=filtered.length;
@@ -14793,13 +14907,15 @@ function _repairRenderTablePage(){
       +'<button class="abt" style="border-color:var(--er);color:var(--er)" onclick="repairDeleteJob('+sentId+','+retId+','+unitId+')" title="ลบ">🗑️</button>'
       +'</td>';
     return '<tr style="border-top:1px solid var(--bd)">'
-      +'<td style="padding:7px 8px;font-family:var(--mo)">'+esc(sentDate)+'</td>'
+      +'<td style="padding:7px 8px;font-family:var(--mo)">'+esc(sentDate)+(_repairIsFuture(j)?' <span title="วันที่ยังมาไม่ถึง — ตรวจว่าพิมพ์ผิดหรือไม่" style="cursor:help">⚠️</span>':'')+'</td>'
       +'<td style="padding:7px 8px"><span style="background:rgba(0,200,255,.1);color:var(--ac);border-radius:4px;padding:1px 6px;font-size:10px">'+esc(type)+'</span></td>'
       +'<td style="padding:7px 8px;font-family:var(--mo)">No.'+esc(no)+(nvh?' · '+esc(nvh):'')+'</td>'
+      +'<td style="padding:7px 8px;color:var(--mu)">'+esc(j.sent&&j.sent.brand_model?j.sent.brand_model:'—')+'</td>'
       +'<td style="padding:7px 8px;color:var(--mu)">'+esc(symptom)+'</td>'
       +'<td style="padding:7px 8px;color:var(--mu)">'+esc(reporter)+'</td>'
       +'<td style="padding:7px 8px;font-family:var(--mo)">'+esc(retDate)+'</td>'
       +'<td style="padding:7px 8px;color:var(--mu)">'+esc(receiver)+'</td>'
+      +'<td style="padding:7px 8px;white-space:nowrap;font-family:var(--mo)">'+_repairDurHtml(j)+'</td>'
       +'<td style="padding:7px 8px;text-align:center">'+statusHtml+'</td>'
       +actHtml
       +'</tr>';
@@ -14811,9 +14927,9 @@ function _repairRenderTablePage(){
       +(total
         ?'<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--mu);font-size:10px;text-transform:uppercase">'
           +'<th style="text-align:left;padding:6px 8px">วันที่ส่ง</th><th style="text-align:left;padding:6px 8px">ประเภท</th><th style="text-align:left;padding:6px 8px">เลข/NVH</th>'
-          +'<th style="text-align:left;padding:6px 8px">อาการที่พบ</th><th style="text-align:left;padding:6px 8px">ผู้รายงาน</th>'
+          +'<th style="text-align:left;padding:6px 8px">ยี่ห้อ/รุ่น</th><th style="text-align:left;padding:6px 8px">อาการที่พบ</th><th style="text-align:left;padding:6px 8px">ผู้รายงาน</th>'
           +'<th style="text-align:left;padding:6px 8px">วันรับคืน</th><th style="text-align:left;padding:6px 8px">ผู้รับคืน</th>'
-          +'<th style="text-align:center;padding:6px 8px">สถานะ</th><th style="text-align:center;padding:6px 8px">จัดการ</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'
+          +'<th style="text-align:left;padding:6px 8px">ค้าง/ใช้เวลา</th><th style="text-align:center;padding:6px 8px">สถานะ</th><th style="text-align:center;padding:6px 8px">จัดการ</th></tr></thead><tbody>'+rowsHtml+'</tbody></table>'
         :'<div style="color:var(--mu);font-size:12px;padding:14px">ไม่พบรายการที่ตรงเงื่อนไข</div>')
       +(total?'<div style="font-size:11px;color:var(--mu);padding:8px 12px;text-align:right">แสดง '+(start+1)+'–'+Math.min(start+_repairPageSize,total)+' จาก '+total+' รายการ</div>':'');
   }
@@ -14996,6 +15112,7 @@ window.repairClearFilters=function(){
   var fy=document.getElementById('repairFilterFY'),df=document.getElementById('repairDateFrom'),dt=document.getElementById('repairDateTo');
   if(t)t.value='';if(s)s.value='';if(q)q.value='';
   if(fy)fy.value='';if(df)df.value='';if(dt)dt.value='';
+  var _so=document.getElementById('repairSort');if(_so)_so.value='';
   _repairRenderAll();
 };
 
@@ -15112,6 +15229,7 @@ window.repairImportCSV=async function(el){
 // แต่ให้เบราว์เซอร์/OS เรนเดอร์ให้ตอนกด "พิมพ์/บันทึกเป็น PDF" เอง (ต่างจากไลบรารีสร้าง PDF ฝั่ง JS
 // อย่าง jsPDF ที่ฟอนต์ default ไม่มีตัวอักษรไทย ทำให้เพี้ยนเป็นสี่เหลี่ยม/หายไปได้)
 window.repairExportPDF=function(){
+  if(window._repairPrt)return window._repairPrt();   // §REPAIR-EXP: พิมพ์แบบหน้า app ตามตัวกรอง (ตัวเดิมด้านล่างเก็บไว้เป็นทางสำรอง)
   var jobs=_repairJobsCache||[];
   var rows=[['วันที่ส่ง','ประเภท','เลข','NVH No.','อาการที่พบ','ผู้รายงาน','วันรับคืน','ผู้รับคืน','สถานะ']];
   jobs.forEach(function(j){
@@ -17727,6 +17845,194 @@ window._omDeptList=function(){
       _sfpOpen('<div class="card">'+h+'</div>','📊 สรุปเปรียบเทียบ — '+esc(title(C)),'แสดง: '+esc(metName(C)),'สรุปเปรียบเทียบ');
     };
   }catch(e){console.warn('swlCmpExp init:',e.message);}
+})();
+</script>
+<script>
+/* §DAILY-EXP — Excel / พิมพ์ ของหน้า "📅 สรุปรายการยืมประจำวัน" แบบหน้า app
+   ข้อมูลมาจากตัวช่วยชุดเดียวกับที่วาดหน้าจอ (_dailyActiveItems + _dailyGroups) → ตรงกับตัวกรองบนจอเสมอ ครบทุกแถว (ไม่ตัดตามการแบ่งหน้า)
+   Excel = .xlsx จริง (xlsxSave) 2 ชีต: "สรุปรายการยืม" (แยกกลุ่มตามชนิด) + "ข้อมูลแบนราบ" · พิมพ์ = หน้าพิมพ์กลาง _sfpOpen */
+(function(){
+  try{
+    var COLS=['หมายเลขเครื่อง','วันที่ยืม','แผนก','ผู้ป่วย','วันที่ใช้','ผู้ให้ยืม','ประวัติโอน','อุปกรณ์ประกอบ'];
+    function rawVal(id){var el=document.getElementById(id);return el?String(el.value||'').trim():'';}
+    function filterDesc(){
+      var p=[],q=rawVal('dailySearch'),t=rawVal('dailyFilter'),d=rawVal('dailyDept'),a=rawVal('dailyDateS'),b=rawVal('dailyDateE');
+      if(q)p.push('ค้นหา "'+q+'"');if(t)p.push('ชนิด = '+t);if(d)p.push('แผนก = '+d);
+      if(a||b)p.push('วันที่ยืม '+(a||'…')+' ถึง '+(b||'…'));
+      return p.length?'ตัวกรอง: '+p.join(' · '):'ตัวกรอง: ไม่มี (แสดงทั้งหมด)';
+    }
+    function collect(){
+      if(typeof loans==='undefined'||loans===null){if(window.toast)toast('ยังไม่มีข้อมูล — รอโหลดก่อน','warning');return null;}
+      var now=new Date(),active=_dailyActiveItems(),groups=_dailyGroups(active);
+      var G=groups.map(function(g){
+        var over=0,warn=0;
+        var rows=g.items.map(function(item){
+          var ld=item.loan.LoanDate||'-';
+          var days=ld&&ld!=='-'?Math.max(0,Math.round((now-new Date(ld))/86400000)):'-';
+          if(typeof days==='number'){if(days>30)over++;else if(days>14)warn++;}
+          var th=item.borrow&&Array.isArray(item.borrow.TransferHistory)?item.borrow.TransferHistory:[];
+          var accs=item.borrow&&Array.isArray(item.borrow.Accessories)?item.borrow.Accessories.length:0;
+          return[item.borrow?(S(item.borrow.EquipmentNo)||'—'):'—',ld,S(item.loan.DeptName),S(item.loan.PatientName),days,
+            item.borrow?S(item.borrow.GiverName||'-'):'-',th.map(function(t){return S(t.toDept)+'('+t.date+')';}).join('→'),accs];
+        });
+        return{name:g.name,rows:rows,over:over,warn:warn};
+      });
+      var over=0,warn=0,types={};
+      active.forEach(function(item){
+        types[S(item.eq.name)]=1;var ld=item.loan.LoanDate;
+        if(ld){var d=Math.max(0,Math.round((now-new Date(ld))/86400000));if(d>30)over++;else if(d>14)warn++;}
+      });
+      var tcount=EQL.filter(function(n){return types[n];}).length;
+      if(!G.length){if(window.toast)toast('ไม่มีข้อมูลตามตัวกรองนี้','warning');return null;}
+      return{G:G,total:active.length,types:tcount,over:over,warn:warn,desc:filterDesc()};
+    }
+    function gHead(g){return g.name+' — '+g.rows.length+' เครื่อง'+(g.over?' · เกิน 30 วัน '+g.over:'')+(g.warn?' · 15–30 วัน '+g.warn:'');}
+    function today(){return typeof localDateStr==='function'?localDateStr(new Date()):new Date().toISOString().slice(0,10);}
+    window._dailyXls=function(){
+      var D=collect();if(!D)return;
+      if(!window.xlsxSave){if(window.toast)toast('ตัวสร้างไฟล์ Excel ยังไม่พร้อม','error');return;}
+      var rows=[['สรุปรายการยืมเครื่องมือประจำวัน'],[D.desc],['กำลังยืมทั้งหมด '+D.total+' · ชนิดเครื่องมือ '+D.types+' · เกิน 30 วัน '+D.over+' · 15–30 วัน '+D.warn],[]];
+      var hdr=[],ttl=[0],plain=[1,2,3];
+      D.G.forEach(function(g,gi){
+        if(gi>0){rows.push([]);plain.push(rows.length-1);}
+        ttl.push(rows.length);rows.push([gHead(g)]);
+        hdr.push(rows.length);rows.push(COLS.slice());
+        g.rows.forEach(function(r){plain.push(rows.length);rows.push(r);});
+      });
+      var flat=[['ชนิดเครื่องมือ'].concat(COLS)];
+      D.G.forEach(function(g){g.rows.forEach(function(r){flat.push([g.name].concat(r));});});
+      var fplain=[];for(var i=1;i<flat.length;i++)fplain.push(i);
+      window.xlsxSave('สรุปรายการยืมประจำวัน_'+today(),[
+        {name:'สรุปรายการยืม',rows:rows,hdr:hdr,title:ttl,plain:plain,widths:[16,12,18,20,9,18,34,12]},
+        {name:'ข้อมูลแบนราบ',rows:flat,hdr:[0],title:[],plain:fplain,widths:[18,16,12,18,20,9,18,34,12]}]);
+    };
+    window._dailyPrt=function(){
+      var D=collect();if(!D)return;
+      var th='padding:4px 7px;border:1px solid #ddd;background:#f3f4f6;font-size:10.5px;text-align:left',td='padding:4px 7px;border:1px solid #ddd;font-size:11px';
+      var box=function(v,l,c){return '<div style="flex:1;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px"><div style="font-size:18px;font-weight:700;color:'+c+'">'+v+'</div><div style="font-size:10px;color:#6b7280">'+l+'</div></div>';};
+      var h='<div class="sfp-keep" style="display:flex;gap:8px;margin-bottom:12px">'+box(D.total,'กำลังยืมทั้งหมด','#0284c7')+box(D.types,'ชนิดเครื่องมือ','#111827')+box(D.over,'เกิน 30 วัน',D.over?'#dc2626':'#9ca3af')+box(D.warn,'15–30 วัน',D.warn?'#b45309':'#9ca3af')+'</div>';
+      D.G.forEach(function(g){
+        h+='<div class="card"><div class="sfp-head" style="font-weight:700;font-size:13px;color:#0369a1;margin-bottom:6px">🔧 '+esc(g.name)+' <span style="font-weight:400;color:#6b7280;font-size:11px">— '+g.rows.length+' เครื่อง'
+          +(g.over?' · <b style="color:#dc2626">เกิน 30 วัน '+g.over+'</b>':'')+(g.warn?' · <b style="color:#b45309">15–30 วัน '+g.warn+'</b>':'')+'</span></div>'
+          +'<table><thead><tr>'+COLS.map(function(c){return '<th style="'+th+'">'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>'
+          +g.rows.map(function(r){
+            var dc=typeof r[4]==='number'&&r[4]>30?'#dc2626':typeof r[4]==='number'&&r[4]>14?'#b45309':'#15803d';
+            return '<tr>'+r.map(function(c,i){
+              if(i===4)return '<td style="'+td+';text-align:center;font-weight:700;color:'+dc+'">'+esc(c)+'</td>';
+              if(i===7)return '<td style="'+td+';text-align:center">'+(c?esc(c)+' รายการ':'-')+'</td>';
+              return '<td style="'+td+(i===0?';font-weight:700':'')+'">'+esc(c===''?'—':c)+'</td>';
+            }).join('')+'</tr>';
+          }).join('')+'</tbody></table></div>';
+      });
+      _sfpOpen(h,'📅 สรุปรายการยืมเครื่องมือประจำวัน',esc(D.desc),'สรุปรายการยืมประจำวัน');
+    };
+  }catch(e){console.warn('dailyExp init:',e.message);}
+})();
+</script>
+
+<script>
+/* §REPAIR-EXP — หน้า "🔧 งานส่งซ่อม": Excel / พิมพ์แบบหน้า app + เตือนวันที่ยังมาไม่ถึงตอนบันทึก
+   ข้อมูลมาจาก _repairFilteredCache (รายการที่ตารางบนจอแสดงอยู่ ตามตัวกรอง/การเรียงปัจจุบัน ครบทุกแถวไม่ตัดตามการแบ่งหน้า)
+   สถิติมาจาก _repairStats ชุดเดียวกับกล่อง "อายุงานค้าง/ระยะเวลาซ่อม" บนจอ · Excel = .xlsx จริง (xlsxSave) · พิมพ์ = _sfpOpen
+   ปุ่ม CSV เดิม (repairExportCSV) ไม่แตะ — ใช้นำเข้ากลับ */
+(function(){
+  try{
+    function selText(id){var el=document.getElementById(id);if(!el||!el.value)return '';var o=el.options&&el.options[el.selectedIndex];return o?o.text:el.value;}
+    function rawVal(id){var el=document.getElementById(id);return el?String(el.value||'').trim():'';}
+    function filterDesc(){
+      var p=[],t=rawVal('repairFilterType'),s=selText('repairFilterStatus'),fy=selText('repairFilterFY'),a=rawVal('repairDateFrom'),b=rawVal('repairDateTo'),q=rawVal('repairSearch'),so=rawVal('repairSort');
+      if(t)p.push('ชนิด = '+t);if(s)p.push('สถานะ = '+s);
+      if(fy)p.push(fy);else if(a||b)p.push('ช่วงวันที่ส่ง '+(a||'…')+' ถึง '+(b||'…'));
+      if(q)p.push('ค้นหา "'+q+'"');if(so==='aging')p.push('เรียงค้างนานสุดก่อน');
+      return p.length?'ตัวกรอง: '+p.join(' · '):'ตัวกรอง: ไม่มี (แสดงทั้งหมด)';
+    }
+    function cur(){
+      var L=window._repairFilteredCache;
+      if(!window._repairJobsCache||!L){if(window.toast)toast('ยังไม่มีข้อมูล — รอโหลดก่อน','warning');return null;}
+      if(!L.length){if(window.toast)toast('ไม่มีรายการตามตัวกรองนี้','warning');return null;}
+      return{L:L,st:_repairStats(L),desc:filterDesc()};
+    }
+    function durTxt(j){var d=_repairDur(j);return d.n===null?'':d.n;}
+    function rowOf(j){
+      var s=j.sent,r=j.returned;
+      return[s?s.event_date:'',_repairJobType(j),String(_repairJobNo(j)==null?'':_repairJobNo(j)),s&&s.brand_model||'',s&&s.nvh_no||'',s&&s.note||'',s&&s.reporter||'',
+        r?r.event_date:'',r&&r.receiver||'',r?'รับคืนแล้ว':'รอซ่อม',durTxt(j)];
+    }
+    var JH=['วันที่ส่ง','ประเภท','เลข','ยี่ห้อ/รุ่น','NVH No.','อาการที่พบ','ผู้รายงาน','วันรับคืน','ผู้รับคืน','สถานะ','ค้าง/ใช้เวลาซ่อม (วัน)'];
+    window._repairXls=function(){
+      var C=cur();if(!C)return;
+      if(!window.xlsxSave){if(window.toast)toast('ตัวสร้างไฟล์ Excel ยังไม่พร้อม','error');return;}
+      var st=C.st,R=[['รายงานงานส่งซ่อม'],[C.desc],[]],hdr=[],ttl=[0],plain=[1,2];
+      var add=function(row,kind){var i=R.length;R.push(row);if(kind==='h')hdr.push(i);else if(kind==='t')ttl.push(i);else plain.push(i);};
+      add(['ทั้งหมด','รอซ่อม','รับคืนแล้ว','ประเภทเครื่องมือ'],'h');add([st.total,st.pending,st.returned,st.byType.length]);add([]);
+      add(['อายุงานค้าง / ระยะเวลาซ่อม','ค่า','หมายเหตุ'],'h');
+      add(['ค้างนานสุด (วัน)',st.oldest?st.oldest.n:'',st.oldest?st.oldest.type+' No.'+st.oldest.no:'ไม่มีงานค้าง']);
+      add(['ค้างเกิน 30 วัน (งาน)',st.over,'']);add(['ค้าง 15–30 วัน (งาน)',st.warn,'']);
+      add(['ซ่อมเสร็จเฉลี่ย (วัน)',st.nDone?st.avgDone:'',st.nDone?'จาก '+st.nDone+' งาน'+(st.nDone<10?' — ข้อมูลน้อย':''):'ยังไม่มีงานที่มีทั้งวันส่งและวันรับคืน']);
+      add(['ซ่อมเสร็จ มัธยฐาน (วัน)',st.nDone?st.medDone:'','']);
+      if(st.future)add(['วันที่ยังมาไม่ถึง (งาน)',st.future,'ตรวจว่าพิมพ์ผิดหรือไม่']);
+      add([]);
+      add(['สถิติตามประเภท','ทั้งหมด','รอซ่อม','รับคืนแล้ว'],'h');st.byType.forEach(function(x){add([x.name,x.total,x.pending,x.returned]);});add([]);
+      add(['สถิติรายเดือน (ตามวันที่ส่ง)','จำนวนงาน','รอซ่อม','รับคืนแล้ว'],'h');st.byMonth.forEach(function(x){add([x.ym,x.total,x.pending,x.returned]);});add([]);
+      add(['เครื่องที่ซ่อมซ้ำ (2 ครั้งขึ้นไป)','จำนวนครั้ง','ล่าสุด'],'h');
+      if(st.repeat.length)st.repeat.forEach(function(u){add([u.type+' No.'+u.no,u.n,u.last]);});else add(['ไม่มีเครื่องที่ซ่อมซ้ำในช่วงที่กรอง','','']);
+      var J=[JH.slice()],jp=[];
+      C.L.forEach(function(j){jp.push(J.length);J.push(rowOf(j));});
+      window.xlsxSave('งานส่งซ่อม_'+_repairToday(),[
+        {name:'สรุป',rows:R,hdr:hdr,title:ttl,plain:plain,widths:[34,14,22,16]},
+        {name:'รายการ',rows:J,hdr:[0],title:[],plain:jp,widths:[12,16,10,18,12,34,18,12,16,12,18]}]);
+    };
+    window._repairPrt=function(){
+      var C=cur();if(!C)return;
+      var st=C.st,th='padding:4px 7px;border:1px solid #ddd;background:#f3f4f6;font-size:10.5px;text-align:left',td='padding:4px 7px;border:1px solid #ddd;font-size:11px';
+      var box=function(v,l,c){return '<div style="flex:1;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px"><div style="font-size:18px;font-weight:700;color:'+c+'">'+v+'</div><div style="font-size:10px;color:#6b7280">'+l+'</div></div>';};
+      var col=function(n){return n>30?'#dc2626':n>14?'#b45309':'#15803d';};
+      var h='<div class="sfp-keep" style="display:flex;gap:8px;margin-bottom:10px">'+box(st.total,'ทั้งหมด','#0284c7')+box(st.pending,'รอซ่อม','#b45309')+box(st.returned,'รับคืนแล้ว','#15803d')+box(st.byType.length,'ประเภทเครื่องมือ','#111827')+'</div>';
+      h+='<div class="sfp-keep" style="display:flex;gap:8px;margin-bottom:12px">'
+        +box(st.oldest?st.oldest.n+' วัน':'—','ค้างนานสุด'+(st.oldest?' ('+esc(st.oldest.type)+' No.'+esc(st.oldest.no)+')':''),st.oldest?col(st.oldest.n):'#9ca3af')
+        +box(st.over,'ค้างเกิน 30 วัน',st.over?'#dc2626':'#9ca3af')+box(st.warn,'ค้าง 15–30 วัน',st.warn?'#b45309':'#9ca3af')
+        +box(st.nDone?st.avgDone+' วัน':'—','ซ่อมเสร็จเฉลี่ย'+(st.nDone?' (มัธยฐาน '+st.medDone+' · จาก '+st.nDone+' งาน'+(st.nDone<10?' · ข้อมูลน้อย':'')+')':''),'#0369a1')+'</div>';
+      var mini=function(title,heads,rows){return '<div class="sfp-keep"><table><thead><tr><th colspan="'+heads.length+'" style="'+th+'">'+esc(title)+'</th></tr><tr>'+heads.map(function(x){return '<th style="'+th+'">'+esc(x)+'</th>';}).join('')+'</tr></thead><tbody>'
+        +(rows.length?rows.map(function(r){return '<tr>'+r.map(function(c){return '<td style="'+td+'">'+esc(c)+'</td>';}).join('')+'</tr>';}).join(''):'<tr><td colspan="'+heads.length+'" style="'+td+';color:#6b7280">ไม่มีข้อมูล</td></tr>')+'</tbody></table></div>';};
+      h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
+        +mini('สถิติตามประเภท',['ประเภท','ทั้งหมด','รอซ่อม','คืนแล้ว'],st.byType.map(function(x){return[x.name,x.total,x.pending,x.returned];}))
+        +mini('สถิติรายเดือน (ตามวันที่ส่ง)',['เดือน','จำนวนงาน','รอซ่อม','คืนแล้ว'],st.byMonth.map(function(x){return[x.ym,x.total,x.pending,x.returned];}))+'</div>';
+      if(st.repeat.length)h+='<div style="margin-bottom:12px">'+mini('🔁 เครื่องที่ซ่อมซ้ำ (2 ครั้งขึ้นไป)',['เครื่อง','จำนวนครั้ง','ล่าสุด'],st.repeat.map(function(u){return[u.type+' No.'+u.no,u.n+' ครั้ง',u.last];}))+'</div>';
+      var heads=['วันที่ส่ง','ประเภท','เลข / NVH','ยี่ห้อ/รุ่น','อาการที่พบ','ผู้รายงาน','วันรับคืน','ผู้รับคืน','ค้าง/ใช้เวลา','สถานะ'];
+      h+='<div class="card"><div class="sfp-head" style="font-weight:700;font-size:13px;margin-bottom:6px">📋 ตารางงานส่งซ่อม <span style="font-weight:400;color:#6b7280;font-size:11px">— '+C.L.length+' รายการ</span></div>'
+        +'<table><thead><tr>'+heads.map(function(x){return '<th style="'+th+'">'+esc(x)+'</th>';}).join('')+'</tr></thead><tbody>'
+        +C.L.map(function(j){
+          var s=j.sent,r=j.returned,d=_repairDur(j),no=_repairJobNo(j),nvh=s&&s.nvh_no?' · '+s.nvh_no:'';
+          var dtx=d.n===null?'—':(d.kind==='pending'?'<b style="color:'+col(d.n)+'">ค้าง '+d.n+' วัน</b>':d.n+' วัน');
+          return '<tr><td style="'+td+'">'+esc(s?s.event_date:'—')+(_repairIsFuture(j)?' ⚠️':'')+'</td><td style="'+td+'">'+esc(_repairJobType(j))+'</td><td style="'+td+'">No.'+esc(no)+esc(nvh)+'</td>'
+            +'<td style="'+td+'">'+esc(s&&s.brand_model||'—')+'</td><td style="'+td+'">'+esc(s&&s.note||'—')+'</td><td style="'+td+'">'+esc(s&&s.reporter||'—')+'</td>'
+            +'<td style="'+td+'">'+esc(r?r.event_date:'—')+'</td><td style="'+td+'">'+esc(r&&r.receiver||'—')+'</td><td style="'+td+';white-space:nowrap">'+dtx+'</td>'
+            +'<td style="'+td+';text-align:center;font-weight:700;color:'+(r?'#15803d':'#b45309')+'">'+(r?'รับคืนแล้ว':'รอซ่อม')+'</td></tr>';
+        }).join('')+'</tbody></table></div>';
+      _sfpOpen(h,'🔧 รายงานงานส่งซ่อม',esc(C.desc),'รายงานงานส่งซ่อม');
+    };
+    // ── เตือนวันที่ยังมาไม่ถึง ก่อนบันทึก (ครอบฟังก์ชันเดิมไว้ ไม่แก้ตัวเดิมที่มีชุดทดสอบคุ้มครอง) ──
+    function futureAsk(pairs){
+      var t=_repairToday(),bad=pairs.filter(function(p){return p[1]&&p[1]>t;});
+      if(!bad.length)return true;
+      return confirm('⚠️ '+bad.map(function(p){return p[0]+' '+p[1];}).join(' / ')+' ยังมาไม่ถึง (วันนี้ '+t+')\nอาจพิมพ์วันที่ผิด — ยืนยันบันทึกวันที่นี้?');
+    }
+    var _v=function(id){var el=document.getElementById(id);return el?el.value:'';};
+    if(typeof window.saveMaintLog==='function'){
+      var _sm=window.saveMaintLog;
+      window.saveMaintLog=function(){
+        if(!futureAsk([[(_v('mlEventType')==='returned'?'วันที่รับคืน':'วันที่ส่งซ่อม'),_v('mlDate')]]))return;
+        return _sm.apply(this,arguments);
+      };
+    }
+    if(typeof window.repairSaveEdit==='function'){
+      var _se=window.repairSaveEdit;
+      window.repairSaveEdit=function(){
+        if(!futureAsk([['วันที่ส่งซ่อม',_v('reEditSentDate')],['วันที่รับคืน',_v('reEditRetDate')]]))return;
+        return _se.apply(this,arguments);
+      };
+    }
+  }catch(e){console.warn('repairExp init:',e.message);}
 })();
 </script>
 </body>
