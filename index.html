@@ -18045,7 +18045,7 @@ window._omDeptList=function(){
     var TH_M=['','ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
     var FM=[10,11,12,1,2,3,4,5,6,7,8,9];            // ลำดับเดือนในปีงบประมาณ
     var MINBASE=10;
-    var st={view:'month',fy:null,same:false};
+    var st={view:'month',fy:null,same:false},lastD=null,openKey=null;
     function today(){return _repairToday();}
     function curFY(){var t=today();return +t.slice(0,4)+543+(+t.slice(5,7)>=10?1:0);}
     function fyOf(d){return +d.slice(0,4)+543+(+d.slice(5,7)>=10?1:0);}
@@ -18060,7 +18060,7 @@ window._omDeptList=function(){
         var t=_repairJobType(j);
         [['s',j.sent],['r',j.returned]].forEach(function(p){
           var e=p[1];if(!e||!e.event_date)return;
-          var ev={k:p[0],d:String(e.event_date).slice(0,10),t:t||'(ไม่ระบุ)'};
+          var ev={k:p[0],d:String(e.event_date).slice(0,10),t:t||'(ไม่ระบุ)',j:j};
           all.push(ev);if(!tf||t===tf)out.push(ev);
         });
       });
@@ -18075,11 +18075,12 @@ window._omDeptList=function(){
     function compute(view,fy,same){
       var E=events(),ev=E.ev,tday=today(),cf=curFY();
       var cols=[],rows={},fys=fyList(E.all);
-      function cell(t,i){var r=rows[t]=rows[t]||[];return r[i]=r[i]||{s:0,r:0};}
+      function cell(t,i){var r=rows[t]=rows[t]||[];return r[i]=r[i]||{s:0,r:0,sl:[],rl:[]};}
+      function bump(t,i,e){var x=cell(t,i);x[e.k]++;x[e.k+'l'].push(e);}   // เก็บรายการพร้อมนับ — แผงคลิกดูใช้ชุดเดียวกับตัวเลข
       if(view==='month'){
         fy=fy||cf;
         FM.forEach(function(m,i){var y=m>=10?fy-544:fy-543;cols.push({label:TH_M[m],start:y+'-'+('0'+m).slice(-2)+'-01',idx:i});});
-        ev.forEach(function(e){if(fyOf(e.d)!==fy)return;var i=FM.indexOf(+e.d.slice(5,7));cell(e.t,i)[e.k]++;});
+        ev.forEach(function(e){if(fyOf(e.d)!==fy)return;var i=FM.indexOf(+e.d.slice(5,7));bump(e.t,i,e);});
         var rangeStart=fyStart(fy);
       }else{
         var el=same?Math.round((Date.UTC(+tday.slice(0,4),+tday.slice(5,7)-1,+tday.slice(8,10))-Date.UTC(+fyStart(cf).slice(0,4),9,1))/86400000):null;
@@ -18088,7 +18089,7 @@ window._omDeptList=function(){
           var inc=(f===cf&&!same);
           cols.push({label:String(f)+(inc?'*':''),fy:f,idx:i,partial:inc,from:fyStart(f),to:same?addDays(fyStart(f),el):fyEnd(f)});
         });
-        ev.forEach(function(e){cols.forEach(function(c){if(e.d>=c.from&&e.d<=c.to)cell(e.t,c.idx)[e.k]++;});});
+        ev.forEach(function(e){cols.forEach(function(c){if(e.d>=c.from&&e.d<=c.to)bump(e.t,c.idx,e);});});
         var rangeStart=cols.length?cols[0].from:tday;
       }
       var types=Object.keys(rows).sort(function(a,b){
@@ -18121,6 +18122,15 @@ window._omDeptList=function(){
       if(!c||(!c.s&&!c.r))return '<span style="color:var(--mu);opacity:.5">–</span>';
       return '<b>'+(c.s||'<span style="opacity:.4">–</span>')+'</b><span style="opacity:.45"> / </span><b style="color:'+(color||'var(--ok)')+'">'+(c.r||'<span style="opacity:.4">–</span>')+'</b>';
     }
+    // ตัวเลข "ส่ง"/"รับ" ที่คลิกดูรายการได้ (เลข 0 ไม่คลิก)
+    function srk(c,t,i){
+      if(!c||(!c.s&&!c.r))return sr(c);
+      var a=function(k,n,color){
+        if(!n)return '<span style="opacity:.4">–</span>';
+        return '<span class="cmp-k" data-cmp-k="'+k+'" data-cmp-t="'+esc(t)+'" data-cmp-i="'+i+'" title="คลิกดูรายการที่'+(k==='s'?'ส่งซ่อม':'รับคืน')+'"><b'+(color?' style="color:'+color+'"':'')+'>'+n+'</b></span>';
+      };
+      return a('s',c.s)+'<span style="opacity:.45"> / </span>'+a('r',c.r,'var(--ok)');
+    }
     function srPlain(c){if(!c||(!c.s&&!c.r))return '–';return (c.s||'–')+' / '+(c.r||'–');}
     function pctTxt(p){return p.kind==='pct'?(p.v>0?'+':'')+p.v+'%':p.kind==='low'?'ข้อมูลน้อย':p.kind==='partial'?'ไม่ครบปี':'—';}
     function descLine(D){
@@ -18139,11 +18149,11 @@ window._omDeptList=function(){
         h+='<tr><td style="'+td+';text-align:left">'+esc(t)+'</td>'+D.cols.map(function(c,i){
           var x=D.rows[t][i],future=D.view==='month'&&c.start>tday;
           var bg=x&&x.s?'background:rgba(0,200,255,'+Math.min(.5,.1+.4*x.s/mx).toFixed(2)+');':'';
-          return '<td style="'+td+';'+bg+'">'+(future&&!x?'<span style="color:var(--mu);opacity:.35">·</span>':sr(x))+'</td>';
-        }).join('')+'<td style="'+td+';background:var(--bg)">'+sr(D.rowTot[t])+'</td></tr>';
+          return '<td style="'+td+';'+bg+'">'+(future&&!x?'<span style="color:var(--mu);opacity:.35">·</span>':srk(x,t,i))+'</td>';
+        }).join('')+'<td style="'+td+';background:var(--bg)">'+srk(D.rowTot[t],t,'tot')+'</td></tr>';
       });
       if(!D.types.length)h+='<tr><td colspan="'+(D.cols.length+2)+'" style="'+td+';color:var(--mu)">ไม่มีข้อมูลในช่วงนี้</td></tr>';
-      h+='<tr><td style="'+td+';text-align:left;font-weight:700;background:var(--bg)">รวม ส่ง / รับ</td>'+D.tot.map(function(c){return '<td style="'+td+';background:var(--bg)">'+sr(c)+'</td>';}).join('')+'<td style="'+td+';background:var(--bg)">'+sr(D.grand)+'</td></tr>';
+      h+='<tr><td style="'+td+';text-align:left;font-weight:700;background:var(--bg)">รวม ส่ง / รับ</td>'+D.tot.map(function(c,i){return '<td style="'+td+';background:var(--bg)">'+srk(c,'',i)+'</td>';}).join('')+'<td style="'+td+';background:var(--bg)">'+srk(D.grand,'','tot')+'</td></tr>';
       if(D.pct)h+='<tr><td style="'+td+';text-align:left;color:var(--mu);font-size:11px">ส่ง เทียบปีก่อน (%)</td>'+D.pct.map(function(p){
         var c=p.kind==='pct'?(p.v>0?'var(--wn)':p.v<0?'var(--ok)':'var(--mu)'):'var(--mu)';
         return '<td style="'+td+';font-size:11px;color:'+c+'">'+(p.kind==='low'||p.kind==='partial'?'<span style="background:rgba(251,191,36,.15);border-radius:4px;padding:1px 6px;font-size:10px">'+pctTxt(p)+'</span>':pctTxt(p))+'</td>';
@@ -18164,7 +18174,7 @@ window._omDeptList=function(){
     function render(){
       var el=document.getElementById('repairCmp');if(!el)return;
       if(!window._repairJobsCache){el.innerHTML='';return;}
-      el.innerHTML=build().html;
+      var b=build();el.innerHTML=b.html;lastD=b.D;openKey=null;   // วาดใหม่ = แผงที่ขยายไว้พับกลับ
     }
     window._repairCmpRender=render;
     window.repairCmpSet=function(k,v){
@@ -18198,6 +18208,46 @@ window._omDeptList=function(){
         +'</tbody></table><div style="font-size:10.5px;color:#6b7280;margin-top:6px">ช่องละ ส่ง / รับ · ส่งนับตามวันที่ส่ง · รับนับตามวันที่รับคืน'+(D.note?'<br>⚠️ '+esc(D.note):'')+'</div></div>';
       _sfpOpen(h,'📊 เปรียบเทียบส่งซ่อม / รับคืน',esc(descLine(D)),'เปรียบเทียบส่งซ่อม รับคืน');
     };
+    // ── คลิกเลข ส่ง/รับ → แถวขยายใต้แถวนั้น แสดงรายการที่นับเป็นเลขนั้น (เปิดได้ทีละแห่ง · คลิกซ้ำพับ) ──
+    var cst=document.createElement('style');cst.id='cmpDrillStyle';
+    cst.textContent='.cmp-k{cursor:pointer;display:inline-block;padding:1px 4px;border-radius:4px;border-bottom:1px dotted var(--mu)}.cmp-k:hover{background:rgba(0,200,255,.18)}.cmp-k.cmp-on{background:rgba(0,200,255,.28);outline:1px solid var(--ac)}'
+      +'.cmp-panel{background:var(--bg);border:1px solid var(--bd);border-left:3px solid var(--ac);border-radius:6px;padding:8px 10px;margin:4px 0;font-size:12px;text-align:left;white-space:normal}'
+      +'.cmp-panel table{width:100%;border-collapse:collapse;font-size:11px}.cmp-panel th{color:var(--mu);font-weight:700;text-align:left;padding:3px 6px;border-bottom:1px solid var(--bd);white-space:nowrap}.cmp-panel td{padding:3px 6px;border-bottom:1px solid var(--bd);text-align:left}';
+    document.head.appendChild(cst);
+    function gather(D,k,t,i){
+      var out=[];
+      (t?[t]:D.types).forEach(function(tt){var r=D.rows[tt]||[];(i==='tot'?r:[r[i]]).forEach(function(c){if(c)out=out.concat(c[k+'l']);});});
+      return out.sort(function(a,b){return a.d<b.d?-1:a.d>b.d?1:0;});
+    }
+    function closeCmp(){var el=document.getElementById('repairCmp');if(el)el.querySelectorAll('.cmp-row').forEach(function(x){x.parentNode.removeChild(x);});if(el)el.querySelectorAll('.cmp-on').forEach(function(x){x.classList.remove('cmp-on');});openKey=null;}
+    window._cmpClose=closeCmp;
+    function panelHtml(D,k,t,i){
+      var L=gather(D,k,t,i),col=i==='tot'?'รวมทั้งช่วง':(D.cols[i]?D.cols[i].label:''),mixed=!t;
+      var per=i==='tot'?(D.view==='month'?'รวมปีงบ '+D.fy:'รวมทุกปีงบ'):(D.view==='month'?col+' (ปีงบ '+D.fy+')':'ปีงบ '+col);
+      var title=(k==='s'?'ส่งซ่อม':'รับคืน')+' · '+(t||'ทุกชนิด')+' · '+per;
+      var h='<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><b style="color:var(--ac)">'+esc(title)+'</b><span style="color:var(--mu)">'+L.length+' รายการ</span><span style="flex:1"></span><button class="btn bg sm" type="button" onclick="_cmpClose()" title="พับ">✕</button></div>';
+      var cell=function(x){return '<td>'+x+'</td>';};
+      var rowsH=L.map(function(e){
+        var j=e.j,s=j.sent,r=j.returned,no=_repairJobNo(j),nvh=s&&s.nvh_no?' · '+esc(s.nvh_no):'',d=_repairDur(j),tp=mixed?cell(esc(_repairJobType(j))):'';
+        if(k==='s'){
+          var stx=r?'<span style="color:var(--ok);font-weight:700">รับคืนแล้ว '+esc(r.event_date)+'</span>'+(d.n!==null?' <span style="color:var(--mu)">('+d.n+' วัน)</span>':''):(d.n===null?'<span style="color:var(--mu)">—</span>':'<b style="color:'+_repairAgeColor(d.n)+'">ค้าง '+d.n+' วัน</b>');
+          return '<tr>'+cell(esc(e.d)+(_repairIsFuture(j)?' ⚠️':''))+tp+cell('No.'+esc(no)+nvh)+cell(esc(s&&s.brand_model||'—'))+cell(esc(s&&s.note||'—'))+cell(esc(s&&s.reporter||'—'))+cell(stx)+'</tr>';
+        }
+        return '<tr>'+cell(esc(e.d))+tp+cell('No.'+esc(no)+nvh)+cell(esc(r&&r.receiver||'—'))+cell(s?esc(s.event_date):'<span style="color:var(--mu)">—</span>')+cell(d.kind==='done'&&d.n!==null?d.n+' วัน':'—')+'</tr>';
+      }).join('');
+      var head=k==='s'?'<th>วันที่ส่ง</th>'+(mixed?'<th>ชนิด</th>':'')+'<th>เลข/NVH</th><th>ยี่ห้อ/รุ่น</th><th>อาการ</th><th>ผู้รายงาน</th><th>สถานะ</th>':'<th>วันที่รับคืน</th>'+(mixed?'<th>ชนิด</th>':'')+'<th>เลข/NVH</th><th>ผู้รับคืน</th><th>ส่งเดิมเมื่อ</th><th>ใช้เวลาซ่อม</th>';
+      return h+'<div style="max-height:320px;overflow:auto"><table><thead><tr>'+head+'</tr></thead><tbody>'+rowsH+'</tbody></table></div>';
+    }
+    document.addEventListener('click',function(e){
+      var s=e.target.closest&&e.target.closest('#repairCmp .cmp-k');if(!s||!lastD)return;
+      try{
+        var k=s.getAttribute('data-cmp-k'),t=s.getAttribute('data-cmp-t'),i=s.getAttribute('data-cmp-i');if(i!=='tot')i=parseInt(i,10);
+        var key=k+'\u0001'+t+'\u0001'+i,was=openKey===key;closeCmp();if(was)return;
+        var tr=s.closest('tr'),n=tr.closest('table').rows[0].cells.length,row=document.createElement('tr');row.className='cmp-row';
+        row.innerHTML='<td colspan="'+n+'" style="padding:4px 8px"><div class="cmp-panel">'+panelHtml(lastD,k,t,i)+'</div></td>';
+        tr.parentNode.insertBefore(row,tr.nextSibling);s.classList.add('cmp-on');openKey=key;
+      }catch(err){console.warn('repairCmp drill:',err.message);}
+    });
     if(typeof window._repairRenderAll==='function'){
       var _ra=window._repairRenderAll;
       window._repairRenderAll=function(){var r=_ra.apply(this,arguments);try{render();}catch(e){console.warn('repairCmp render:',e.message);}return r;};
