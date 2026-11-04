@@ -740,7 +740,7 @@ function toggleTheme(){
     </div>
     <div class="fgrid">
       <div class="fg"><label>วันที่ยืม *</label><input type="date" id="loanDate"></div>
-      <div class="fg"><label>ชื่อผู้ยืม *</label><input type="text" id="borrowerName" placeholder="ชื่อ-นามสกุล"></div>
+      <div class="fg"><label>ชื่อผู้ยืม</label><input type="text" id="borrowerName" placeholder="ชื่อ-นามสกุล"></div>
       <div class="fg"><label>แผนกที่ยืม *</label>
         <div class="ssw"><input type="text" id="deptSearch" placeholder="พิมพ์ชื่อแผนก..." oninput="filterSSL('deptList',this.value)" onfocus="openSSL('deptList')" autocomplete="off">
           <div class="ssl" id="deptList"></div></div>
@@ -2453,7 +2453,7 @@ function toggleTheme(){
           <input type="text" id="qbDeptOther" placeholder="ระบุชื่อแผนก/หน่วยงาน..." style="display:none;margin-top:6px;border-color:var(--wn)" oninput="qbUpdateDeptOther()">
         </div>
         <div class="fg"><label>ชื่อ-นามสกุลผู้ป่วย *</label><input type="text" id="qbPatientName" placeholder="ชื่อ-นามสกุลผู้ป่วย"></div>
-        <div class="fg"><label>ชื่อผู้ยืม *</label><input type="text" id="qbBorrowerName" placeholder="ชื่อ-นามสกุล"></div>
+        <div class="fg"><label>ชื่อผู้ยืม</label><input type="text" id="qbBorrowerName" placeholder="ชื่อ-นามสกุล"></div>
         <div class="fg"><label>ผู้ให้ยืม *</label>
           <select id="qbGiverSel" onchange="handleStaff('qbGiver')"><option value="">— เลือกผู้ให้ยืม —</option><option value="อื่นๆ">อื่นๆ</option></select>
           <input type="text" id="qbGiverOth" class="sth" placeholder="ระบุชื่อ..."></div>
@@ -2569,7 +2569,7 @@ function toggleTheme(){
       <div class="fgrid">
         <div class="fg"><label>LoanID (ไม่สามารถแก้ไข)</label><input type="text" id="admEditLoanIDDisp" disabled style="opacity:.5"></div>
         <div class="fg"><label>วันที่ยืม *</label><input type="date" id="admEditLoanDate"></div>
-        <div class="fg"><label>ผู้ยืม *</label><input type="text" id="admEditBorrower" placeholder="ชื่อ-นามสกุล"></div>
+        <div class="fg"><label>ผู้ยืม</label><input type="text" id="admEditBorrower" placeholder="ชื่อ-นามสกุล"></div>
         <div class="fg"><label>แผนก *</label><input type="text" id="admEditDept" placeholder="ชื่อแผนก"></div>
         <div class="fg"><label>รหัสแผนก</label><input type="text" id="admEditDeptCode" placeholder="0001"></div>
         <div class="fg"><label>ผู้ป่วย *</label><input type="text" id="admEditPatient" placeholder="ชื่อ-นามสกุลผู้ป่วย"></div>
@@ -2721,7 +2721,7 @@ function toggleTheme(){
     <div class="mbdy">
       <div class="fgrid">
         <div class="fg"><label>วันที่ยืม *</label><input type="date" id="addLoanDate"></div>
-        <div class="fg"><label>ผู้ยืม *</label><input type="text" id="addLoanBorrower" placeholder="ชื่อ-นามสกุล"></div>
+        <div class="fg"><label>ผู้ยืม</label><input type="text" id="addLoanBorrower" placeholder="ชื่อ-นามสกุล"></div>
         <div class="fg"><label>แผนก *</label><input type="text" id="addLoanDept" placeholder="ชื่อแผนก"></div>
         <div class="fg"><label>รหัสแผนก</label><input type="text" id="addLoanDeptCode" placeholder="0001" value="9999"></div>
         <div class="fg"><label>ผู้ป่วย *</label><input type="text" id="addLoanPatient" placeholder="ชื่อ-นามสกุลผู้ป่วย"></div>
@@ -6521,7 +6521,7 @@ async function submitLoan(){
   var deptCode=document.getElementById('selDeptCode').value;
   var deptName=document.getElementById('selDeptName').value;
   var patientName=document.getElementById('patientName').value.trim();
-  if(!loanDate||!borrowerName||!deptCode||!patientName){bigToast('กรุณากรอกข้อมูลให้ครบถ้วน','error');return;}
+  if(!loanDate||!deptCode||!patientName){bigToast('กรุณากรอกข้อมูลให้ครบถ้วน','error');return;}
   if(deptCode==='9999'){var oi=document.getElementById('deptOther');var ov=oi?oi.value.trim():'';if(!ov){bigToast('กรุณาระบุชื่อแผนก/หน่วยงาน\nในช่อง "อื่นๆ"','error');if(oi)oi.focus();return;}deptName=ov;}
   var equipmentList=[];
   if(_standbySelected){
@@ -6553,7 +6553,7 @@ async function submitLoan(){
     if(_units.length>1){
       var _cnt={},_ord=[];
       _units.forEach(function(u){if(!_cnt[u.name]){_cnt[u.name]=0;_ord.push(u.name);}_cnt[u.name]++;});
-      if(!confirm('ยืนยันส่งแบบฟอร์มยืม '+_units.length+' ใบ (แยก 1 ใบต่อ 1 เครื่อง)\n\n'+_ord.map(function(n){return '• '+n+' × '+_cnt[n];}).join('\n')+'\n\nผู้ยืม: '+borrowerName+'\nแผนก: '+deptName+'\nผู้ป่วย: '+patientName))return;
+      if(!confirm('ยืนยันส่งแบบฟอร์มยืม '+_units.length+' ใบ (แยก 1 ใบต่อ 1 เครื่อง)\n\n'+_ord.map(function(n){return '• '+n+' × '+_cnt[n];}).join('\n')+'\n\nผู้ยืม: '+(borrowerName||'-')+'\nแผนก: '+deptName+'\nผู้ป่วย: '+patientName))return;
     }
   }
   // งานที่จะส่ง: standby = 1 ใบเดิม / ปกติ = 1 ใบต่อ 1 เครื่อง
@@ -6774,7 +6774,7 @@ async function saveQuickBorrow(){
   var patientName=document.getElementById('qbPatientName').value.trim();
   var borrowerName=document.getElementById('qbBorrowerName').value.trim();
   var giver=getStaff('qbGiver');
-  if(!loanDate||!deptCode||!patientName||!borrowerName){bigToast('กรุณากรอกข้อมูลใบยืมให้ครบถ้วน','error');return;}
+  if(!loanDate||!deptCode||!patientName){bigToast('กรุณากรอกข้อมูลใบยืมให้ครบถ้วน','error');return;}
   if(deptCode==='9999'){var oi=document.getElementById('qbDeptOther');var ov=oi?oi.value.trim():'';if(!ov){bigToast('กรุณาระบุชื่อแผนก/หน่วยงาน\nในช่อง "อื่นๆ"','error');if(oi)oi.focus();return;}deptName=ov;}
   if(!giver){bigToast('กรุณาเลือกหรือระบุผู้ให้ยืม','error');return;}
   var names=Object.keys(_qbSelected);
@@ -11246,7 +11246,7 @@ async function admAddLoan(){
   var eq=document.getElementById('addLoanEq').value;
   var detail=document.getElementById('addLoanDetail').value.trim();
   var status=document.getElementById('addLoanStatus').value;
-  if(!date||!borrower||!dept||!patient||!eq){bigToast('กรุณากรอกข้อมูลให้ครบ','error');return;}
+  if(!date||!dept||!patient||!eq){bigToast('กรุณากรอกข้อมูลให้ครบ','error');return;}
   var ts=new Date();
   var id='LN-'+ts.getFullYear()+String(ts.getMonth()+1).padStart(2,'0')+String(ts.getDate()).padStart(2,'0')+'-'+Math.random().toString(36).substr(2,8).toUpperCase();
   try{
