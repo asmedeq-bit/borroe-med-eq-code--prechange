@@ -7908,14 +7908,16 @@ function _uaPdf(page){
       var HM=_hcModel();
       title=_hcTitle(HM);
       sub='ข้อมูล HFNC ที่มี '+_thShortDate(HM.H.first)+' – '+_thShortDate(HM.H.t)+' · ยี่ห้อตามที่ตั้งใน Admin → HFNC Set · '+(_hc.met==='avg'?'ค่า = เฉลี่ยจำนวนเครื่องที่ใช้อยู่ต่อวัน (นับตัวเครื่อง หารด้วยจำนวนวันตามปฏิทิน)':'ค่า = จำนวนครั้งที่ยืม (ตามวันยืม)');
-      var htd=function(r,b){return'<td class="'+(r&&!r.full?'part':'')+(b?' b':'')+'">'+_hcTxt(r)+'</td>';};
+      var htd=function(r,b,x){return'<td class="'+(r&&!r.full?'part':'')+(b?' b':'')+'">'+_hcTxt(r)+(x||'')+'</td>';};
+      var hav=function(a){return'<td class="b">'+(a?_hcAvgTxt(a)+' ('+a.n+' ด.)':'—')+'</td>';};
       var hch=function(v){return'<td>'+(v===null?'—':(v>=0?'+':'')+v.toFixed(0)+'%')+'</td>';};
       var hTL=HM.total[HM.total.length-1];
       body='<table><thead><tr><th class="n" style="width:'+(HM.k==='m'?12:20)+'%">ยี่ห้อ/รุ่น</th>'+HM.cols.map(function(c){return'<th>'+E(c.label)+(c.sub?'<br><span class="sm">'+E(c.sub)+'</span>':'')+'</th>';}).join('')
-        +(HM.share?'<th>สัดส่วน</th>':'')+(HM.k==='y'?'<th>เปลี่ยนแปลง'+(HM.cmp?'<br><span class="sm">'+E(HM.cols[HM.cmp[0]].label)+' → '+E(HM.cols[HM.cmp[1]].label)+'</span>':'')+'</th>':'')+'</tr></thead><tbody>'
-        +HM.rows.map(function(r){return'<tr><td class="n">'+E(r.s.label)+'</td>'+r.vals.map(function(v,i){return htd(v,HM.cols[i].whole&&HM.k==='m');}).join('')+(HM.share?'<td>'+(r.share===null?'—':r.share+'%')+'</td>':'')+(HM.k==='y'?hch(r.chg):'')+'</tr>';}).join('')
-        +'<tr class="tot"><td class="n">รวมทุกยี่ห้อ</td>'+HM.total.map(function(v){return htd(v,true);}).join('')+(HM.share?'<td>'+(hTL&&hTL.v?'100%':'—')+'</td>':'')+(HM.k==='y'?hch(HM.totalChg):'')+'</tr></tbody></table>';
+        +(HM.avgOn&&HM.k==='m'?'<th>เฉลี่ย/เดือน</th>':'')+(HM.share?'<th>สัดส่วน</th>':'')+(HM.k==='y'?'<th>เปลี่ยนแปลง'+(HM.cmp?'<br><span class="sm">'+E(HM.cols[HM.cmp[0]].label)+' → '+E(HM.cols[HM.cmp[1]].label)+'</span>':'')+'</th>':'')+'</tr></thead><tbody>'
+        +HM.rows.map(function(r){return'<tr><td class="n">'+E(r.s.label)+'</td>'+r.vals.map(function(v,i){return htd(v,HM.cols[i].whole&&HM.k==='m',HM.k==='y'?_hcAvgSub(r.avg[i]):'');}).join('')+(HM.avgOn&&HM.k==='m'?hav(r.avg[HM.cols.length-1]):'')+(HM.share?'<td>'+(r.share===null?'—':r.share+'%')+'</td>':'')+(HM.k==='y'?hch(r.chg):'')+'</tr>';}).join('')
+        +'<tr class="tot"><td class="n">รวมทุกยี่ห้อ</td>'+HM.total.map(function(v,i){return htd(v,true,HM.k==='y'?_hcAvgSub(HM.totalAvg[i]):'');}).join('')+(HM.avgOn&&HM.k==='m'?hav(HM.totalAvg[HM.cols.length-1]):'')+(HM.share?'<td>'+(hTL&&hTL.v?'100%':'—')+'</td>':'')+(HM.k==='y'?hch(HM.totalChg):'')+'</tr></tbody></table>';
       notes.push('* (สีส้ม) = ข้อมูลไม่ครบช่วง (ก่อนเริ่มมีข้อมูล หรือยังไม่จบเดือน/ปี) · ไม่ขึ้นกับช่องวันที่ของหัวข้อ HFNC set'+(HM.k==='y'?' · % เปลี่ยนแปลง แสดงเมื่อมีข้อมูลครบทั้งปีอย่างน้อย 2 ปี':''));
+      if(HM.avgOn)notes.push('เฉลี่ย/เดือน = เฉลี่ยเฉพาะเดือนที่ข้อมูลครบ (ไม่นับเดือน — และเดือน *) · * ท้ายค่าเฉลี่ย = ใช้ข้อมูลน้อยกว่า 3 เดือน');
       if(HM.cols[0].s<u.cutoff)notes.push('ข้อมูลก่อน '+_thShortDate(u.cutoff)+' อาจไม่ครบ (แอปโหลดใบที่คืนแล้วย้อนหลัง 1 ปี)');
     }else{
       var kind=page==='uaCmpM'?'m':'y',C=_uaCmpModel(kind);
@@ -7986,6 +7988,9 @@ function _hcVal(H,id,s,e){
   return{v:_hc.met==='avg'?sum/n:L,n:n,full:s2===s&&e2===e,sum:sum};
 }
 function _hcTxt(r){return r?((_hc.met==='avg'?r.v.toFixed(1):String(r.v))+(r.full?'':'*')+(_hc.met==='avg'?_uaSumS(r):'')):'—';}
+function _hcAvgTxt(a){return a?a.avg.toFixed(1)+(a.n<3?'*':''):'';}
+function _hcAvgSub(a){return a?'<br><span style="font-size:9px;opacity:.65;font-weight:400" title="เฉลี่ยจาก '+a.n+' เดือนที่ข้อมูลครบ">เฉลี่ย '+_hcAvgTxt(a)+'/ด.</span>':'';}
+function _hcAvgTd(a,b){return a?'<td style="text-align:center;font-family:var(--mo);font-weight:700;color:var(--ac)" title="เฉลี่ยจาก '+a.n+' เดือนที่ข้อมูลครบ'+(a.n<3?' (ข้อมูลน้อยกว่า 3 เดือน)':'')+'">'+_hcAvgTxt(a)+' <span style="font-size:9px;font-weight:400;color:var(--mu)">'+a.n+' ด.</span></td>':'<td style="text-align:center;color:var(--mu)" title="ยังไม่มีเดือนที่ข้อมูลครบ">—</td>';}
 function _hcYL(Y){return(_hc.basis==='fy'?'ปีงบ ':'ปี ')+Y;}
 function _hcYears(H){var a=_uaYearOf(H.first,_hc.basis),b=_uaYearOf(H.t,_hc.basis),o=[];for(var y=a;y<=b;y++)o.push(y);return o;}
 function _hcModel(){
@@ -8000,6 +8005,11 @@ function _hcModel(){
   }
   var rows=H.defs.map(function(s){return{s:s,vals:cols.map(function(c){return _hcVal(H,s.id,c.s,c.e);})};});
   var total=cols.map(function(c){return _hcVal(H,'',c.s,c.e);});
+  // เฉลี่ย/เดือน (โหมดครั้งที่ยืม) = เฉลี่ยเฉพาะเดือนที่ข้อมูลครบ · ไม่นับเดือนที่ไม่มีข้อมูล (—) และเดือนที่ไม่ครบ (*)
+  var avgOn=_hc.met==='loan';
+  function hcMon(id,c){var n=0,sm=0,ym=c.s.slice(0,7),ye=c.e.slice(0,7);for(;ym<=ye;ym=_ymAdd(ym,1)){var v=_hcVal(H,id,ym+'-01',_ymLast(ym));if(v&&v.full){n++;sm+=v.v;}}return n?{avg:sm/n,n:n}:null;}
+  rows.forEach(function(r){r.avg=cols.map(function(c){return avgOn&&c.whole?hcMon(r.s.id,c):null;});});
+  var totalAvg=cols.map(function(c){return avgOn&&c.whole?hcMon('',c):null;});
   var mx=0;rows.forEach(function(r){r.vals.forEach(function(v,i){if(v&&(k==='y'||!cols[i].whole)&&v.v>mx)mx=v.v;});});
   // รายเดือน + ครั้งที่ยืม → สัดส่วนทั้งปี · รายปี → % เปลี่ยนแปลง 2 ปีล่าสุดที่ข้อมูลครบทั้งปี (เกณฑ์เดียวกับ _uaCmpModel)
   var last=cols.length-1,T=total[last],cmp=null;
@@ -8007,7 +8017,7 @@ function _hcModel(){
   if(k==='y'){var f=[];total.forEach(function(t,i){if(t&&t.full)f.push(i);});if(f.length>=2)cmp=[f[f.length-2],f[f.length-1]];}
   function hcChg(vals){if(!cmp)return null;var a=vals[cmp[0]],b=vals[cmp[1]];if(!a||!b||!a.full||!b.full||a.v===0)return null;return(b.v-a.v)/a.v*100;}
   rows.forEach(function(r){r.chg=hcChg(r.vals);});
-  return{H:H,k:k,cols:cols,rows:rows,total:total,totalChg:hcChg(total),cmp:cmp,mx:mx,share:k==='m'&&_hc.met==='loan'};
+  return{H:H,k:k,cols:cols,rows:rows,total:total,totalChg:hcChg(total),cmp:cmp,mx:mx,share:k==='m'&&_hc.met==='loan',avgOn:avgOn,totalAvg:totalAvg};
 }
 function _hcShade(color,v,mx){
   if(!v||!mx||!/^#[0-9a-f]{6}$/i.test(color))return'';
@@ -8037,27 +8047,31 @@ function _hcHtml(){
     var sticky='position:sticky;left:0;z-index:1;background:var(--s1);';
     h+='<div style="overflow-x:auto"><table class="dt" style="font-size:11px;white-space:nowrap"><thead><tr><th style="'+sticky+'background:var(--s2)">ยี่ห้อ/รุ่น</th>'
       +M.cols.map(function(c){return'<th style="text-align:center;'+(c.whole&&M.k==='m'?'color:var(--ac)':'')+'">'+c.label+(c.sub?'<br><span style="font-size:9px;text-transform:none">'+c.sub+'</span>':'')+'</th>';}).join('')
+      +(M.avgOn&&M.k==='m'?'<th style="text-align:center;color:var(--ac)" title="เฉลี่ยเฉพาะเดือนที่ข้อมูลครบ (ไม่นับเดือน — และเดือน *)">เฉลี่ย/เดือน</th>':'')
       +(M.share?'<th style="text-align:center">สัดส่วน</th>':'')
       +(M.k==='y'?'<th style="text-align:center" title="เทียบ 2 ปีล่าสุดที่ข้อมูลครบทั้งปี">เปลี่ยนแปลง'+(M.cmp?'<br><span style="font-size:9px;text-transform:none">'+M.cols[M.cmp[0]].label+' → '+M.cols[M.cmp[1]].label+'</span>':'')+'</th>':'')
       +'</tr></thead><tbody>';
-    function td(v,bold,shade){
+    function td(v,bold,shade,extra){
       if(!v)return'<td style="text-align:center;color:var(--mu)">—</td>';
-      return'<td style="text-align:center;font-family:var(--mo);'+(bold?'font-weight:700;':'')+(v.full?'color:var(--tx);':'color:var(--wn);')+(shade||'')+'" title="'+v.n+' วัน'+(v.full?'':' (ข้อมูลไม่ครบช่วง)')+'">'+_hcTxt(v)+'</td>';
+      return'<td style="text-align:center;font-family:var(--mo);'+(bold?'font-weight:700;':'')+(v.full?'color:var(--tx);':'color:var(--wn);')+(shade||'')+'" title="'+v.n+' วัน'+(v.full?'':' (ข้อมูลไม่ครบช่วง)')+'">'+_hcTxt(v)+(extra||'')+'</td>';
     }
     function hcChgTd(v){if(v===null)return'<td style="text-align:center;color:var(--mu)" title="ต้องมีข้อมูลครบทั้งปีอย่างน้อย 2 ปีจึงเทียบได้">—</td>';return'<td style="text-align:center;color:'+(v>=0?'var(--ok)':'var(--er)')+'">'+(v>=0?'▲ +':'▼ ')+v.toFixed(0)+'%</td>';}
     M.rows.forEach(function(r){
       h+='<tr><td style="'+sticky+'font-weight:700;color:'+r.s.color+'"><span style="width:8px;height:8px;border-radius:50%;background:'+r.s.color+';display:inline-block;margin-right:5px"></span>'+esc(r.s.label)+'</td>'
-        +r.vals.map(function(v,i){var w=M.cols[i].whole&&M.k==='m';return td(v,w,w?'':_hcShade(r.s.color,v,M.mx));}).join('')
+        +r.vals.map(function(v,i){var w=M.cols[i].whole&&M.k==='m';return td(v,w,w?'':_hcShade(r.s.color,v,M.mx),M.k==='y'?_hcAvgSub(r.avg[i]):'');}).join('')
+        +(M.avgOn&&M.k==='m'?_hcAvgTd(r.avg[M.cols.length-1]):'')
         +(M.share?'<td style="text-align:center">'+(r.share===null?'—':r.share+'%')+'</td>':'')
         +(M.k==='y'?hcChgTd(r.chg):'')+'</tr>';
     });
-    h+='<tr style="border-top:2px solid var(--bd)"><td style="'+sticky+'font-weight:700;color:var(--ac)">รวมทุกยี่ห้อ</td>'+M.total.map(function(v){return td(v,true,'');}).join('')
+    h+='<tr style="border-top:2px solid var(--bd)"><td style="'+sticky+'font-weight:700;color:var(--ac)">รวมทุกยี่ห้อ</td>'+M.total.map(function(v,i){return td(v,true,'',M.k==='y'?_hcAvgSub(M.totalAvg[i]):'');}).join('')
+      +(M.avgOn&&M.k==='m'?_hcAvgTd(M.totalAvg[M.cols.length-1]):'')
       +(M.share?'<td style="text-align:center;font-weight:700">'+(M.total[M.total.length-1]&&M.total[M.total.length-1].v?'100%':'—')+'</td>':'')
       +(M.k==='y'?hcChgTd(M.totalChg):'')+'</tr>';
     h+='</tbody></table></div>'
       +'<div style="font-size:11px;color:var(--mu);margin-top:6px">'
         +(_hc.met==='avg'?'ตัวเลข = เฉลี่ยจำนวนเครื่องที่ใช้อยู่ต่อวัน (นับตัวเครื่อง · หารด้วยจำนวนวันตามปฏิทิน · เกณฑ์เดียวกับหัวข้อ 🗓️ การใช้งานเครื่องมือ)':'ตัวเลข = จำนวนครั้งที่ยืม HFNC ของยี่ห้อนั้น (ตามวันยืม · เกณฑ์เดียวกับการ์ด "ยืมทั้งหมด")')
         +' · <span style="color:var(--wn)">ส้ม *</span> = ข้อมูลไม่ครบช่วง (ก่อนเริ่มมีข้อมูล '+_thShortDate(H.first)+' หรือยังไม่จบเดือน/ปี) · ไม่ขึ้นกับช่องวันที่ของหัวข้อ HFNC set'
+        +(M.avgOn?' · เฉลี่ย/เดือน = เฉลี่ยเฉพาะเดือนที่ข้อมูลครบ (ไม่นับเดือน — และเดือน *) · * ท้ายค่าเฉลี่ย = ใช้ข้อมูลน้อยกว่า 3 เดือน':'')
         +(M.k==='y'?' · % เปลี่ยนแปลง แสดงเมื่อมีข้อมูลครบทั้งปีอย่างน้อย 2 ปี':'')
       +'</div>'
       +_uaCutNote(H.u,M.cols[0].s);
@@ -8077,11 +8091,12 @@ function _hcSet(p,v){
 function _hcTitle(M){return'เทียบยี่ห้อ/รุ่น HFNC — '+(M.k==='m'?'รายเดือน '+_hcYL(_hc.year):'รายปี')+' · '+(_hc.met==='avg'?'เฉลี่ยเครื่องที่ใช้อยู่/วัน':'ครั้งที่ยืม')+' ('+(_hc.basis==='fy'?'ปีงบประมาณ ต.ค.–ก.ย.':'ปีปฏิทิน ม.ค.–ธ.ค.')+')';}
 function _hcExportRows(){
   var M=_hcModel(),rows=[];
-  rows.push(['ยี่ห้อ/รุ่น'].concat(M.cols.map(function(c){return c.label;}),M.share?['สัดส่วน %']:[],M.k==='y'?['เปลี่ยนแปลง %']:[]));
-  M.rows.forEach(function(r){rows.push([r.s.label].concat(r.vals.map(_hcTxt),M.share?[r.share===null?'':r.share]:[],M.k==='y'?[r.chg===null?'':r.chg.toFixed(0)]:[]));});
+  var ax=function(arr){return!M.avgOn?[]:M.k==='m'?[_hcAvgTxt(arr[M.cols.length-1])]:arr.map(_hcAvgTxt);};
+  rows.push(['ยี่ห้อ/รุ่น'].concat(M.cols.map(function(c){return c.label;}),!M.avgOn?[]:M.k==='m'?['เฉลี่ย/เดือน']:M.cols.map(function(c){return'เฉลี่ย/เดือน '+c.label;}),M.share?['สัดส่วน %']:[],M.k==='y'?['เปลี่ยนแปลง %']:[]));
+  M.rows.forEach(function(r){rows.push([r.s.label].concat(r.vals.map(_hcTxt),ax(r.avg),M.share?[r.share===null?'':r.share]:[],M.k==='y'?[r.chg===null?'':r.chg.toFixed(0)]:[]));});
   var TL=M.total[M.total.length-1];
-  rows.push(['รวมทุกยี่ห้อ'].concat(M.total.map(_hcTxt),M.share?[TL&&TL.v?100:'']:[],M.k==='y'?[M.totalChg===null?'':M.totalChg.toFixed(0)]:[]));
-  rows.push([_hcTitle(M)+' · * = ข้อมูลไม่ครบช่วง']);
+  rows.push(['รวมทุกยี่ห้อ'].concat(M.total.map(_hcTxt),ax(M.totalAvg),M.share?[TL&&TL.v?100:'']:[],M.k==='y'?[M.totalChg===null?'':M.totalChg.toFixed(0)]:[]));
+  rows.push([_hcTitle(M)+' · * = ข้อมูลไม่ครบช่วง'+(M.avgOn?' · เฉลี่ย/เดือน = เฉลี่ยเฉพาะเดือนที่ข้อมูลครบ (ไม่นับเดือน — และเดือน *) · * ท้ายค่าเฉลี่ย = ใช้ข้อมูลน้อยกว่า 3 เดือน':'')]);
   return rows;
 }
 // ── หน้าสถิติ: ปุ่ม CSV / XLS / PDF แยกทุกหัวข้อ (12 ต.ค. 2569) ─────────────────────────────
