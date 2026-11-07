@@ -2631,6 +2631,10 @@ function toggleTheme(){
         <div style="font-size:12px;color:var(--mu);margin-bottom:8px">หมายเลขอุปกรณ์ประกอบ</div>
         <div id="admEditAccList"></div>
       </div>
+      <div id="admEditRetAccWrap" style="display:none;border-top:1px solid var(--bd);margin-top:12px;padding-top:12px">
+        <div style="font-size:12px;color:var(--mu);margin-bottom:8px">อุปกรณ์ประกอบที่บันทึกว่าคืนแล้ว (ลงผิดแก้ได้ที่นี่)</div>
+        <div id="admEditRetAccList"></div>
+      </div>
     </div>
     <div class="mftr">
       <button class="btn ber sm" onclick="admDeleteBorrow(document.getElementById('admEditRecID').value)">🗑 ลบรายการนี้</button>
@@ -18398,6 +18402,52 @@ window._omDeptList=function(){
     }
     ['_dxDo','_dxPage'].forEach(function(n){if(typeof window[n]==='function'){var o=window[n];window[n]=function(){try{closeAll();}catch(e){}return o.apply(this,arguments);};}});
   }catch(e){console.warn('dashdrill init:',e.message);}
+})();
+</script>
+<script>
+// §ADM-UNDO-ACC — Admin แก้ไขบันทึกยืม: ยกเลิกการคืน "อุปกรณ์ประกอบ" ที่ลงผิด (6 พ.ย. 2569)
+// เดิมหน้านี้แก้รายการ "อุปกรณ์ที่คืนแล้ว" (returned_accs) ไม่ได้ · เพิ่มรายการ + ปุ่มยกเลิกต่อรายการ
+// ถ้ายกเลิกจนไม่เหลืออุปกรณ์ที่คืนแล้ว และเครื่องยังไม่คืน → ล้างค่าตกค้างของการคืนครั้งนั้น (วันที่คืน/ผู้รับ/หมายเหตุ/เวลาบันทึกคืน)
+// ไม่แตะ openEditBorrow / admSaveEditBorrow เดิม (ห่อด้วย window.openEditBorrow) · บันทึกแล้วปิดหน้าต่างและโหลดใหม่ กันฟอร์มเก่าเขียนทับ
+(function(){
+  var _open=window.openEditBorrow;
+  function find(recID){return(typeof borrows!=='undefined'&&borrows)?borrows.find(function(x){return S(x.RecordID)===S(recID);}):null;}
+  function render(recID){
+    var wrap=document.getElementById('admEditRetAccWrap'),list=document.getElementById('admEditRetAccList');
+    if(!wrap||!list)return;
+    var b=find(recID),ra=b&&Array.isArray(b.ReturnedAccs)?b.ReturnedAccs:[];
+    if(!ra.length){wrap.style.display='none';list.innerHTML='';return;}
+    wrap.style.display='block';
+    list.innerHTML=ra.map(function(a){
+      return'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap"><span style="flex:1;min-width:160px;font-size:13px">'+esc(S(a.name)||'?')+(S(a.no)?' <span style="color:var(--mu)">('+esc(S(a.no))+')</span>':'')
+        +'<br><span style="font-size:11px;color:var(--mu)">คืนเมื่อ '+esc(S(a.date)||'—')+(S(a.receiver)?' · ผู้รับ '+esc(S(a.receiver)):'')+'</span></span>'
+        +'<button class="btn ber sm" data-rec="'+esc(S(recID))+'" data-acc="'+esc(S(a.id))+'" onclick="admUndoAccReturn(this)">↩ ยกเลิกการคืน</button></div>';
+    }).join('');
+  }
+  window.openEditBorrow=function(recID){
+    var r=_open.apply(this,arguments);
+    try{render(recID);}catch(e){try{console.error('[undo-acc]',e);}catch(_){}}
+    return r;
+  };
+  window.admUndoAccReturn=async function(btn){
+    var recID=btn&&btn.dataset?btn.dataset.rec:'',accId=btn&&btn.dataset?btn.dataset.acc:'';
+    var b=find(recID);if(!b){bigToast('ไม่พบบันทึกการยืม','error');return;}
+    var ra=Array.isArray(b.ReturnedAccs)?b.ReturnedAccs:[];
+    var item=ra.find(function(a){return S(a.id)===S(accId);});if(!item){bigToast('ไม่พบรายการที่คืนแล้ว','error');return;}
+    var keep=ra.filter(function(a){return S(a.id)!==S(accId);});
+    var machineReturned=b.MachineReturned===true||S(b.Status).toUpperCase()==='RETURNED';
+    var clearAll=keep.length===0&&!machineReturned;
+    if(!confirm('ยกเลิกการคืน "'+S(item.name)+'" ?\nรายการ '+recID+'\n\nอุปกรณ์นี้จะกลับเป็น "ยังไม่คืน"'
+      +(clearAll?'\nและล้างวันที่คืน / ผู้รับคืน / หมายเหตุคืน ที่ตกค้างจากการคืนครั้งนั้น (เครื่องยังไม่คืน)':'')))return;
+    var body={returned_accs:keep};
+    if(clearAll){body.return_date=null;body.machine_return_date=null;body.returned_at=null;body.receiver_name='';body.return_remark='';body.return_detail='';}
+    try{
+      await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(recID),body);
+      if(typeof _auditLog==='function')_auditLog('undo_acc_return',recID,{acc:S(item.name),acc_id:S(item.id),returned_date:S(item.date),returned_by:S(item.receiver),cleared_return_fields:clearAll});
+      bigToast('ยกเลิกการคืนแล้ว\n'+S(item.name),'success');closeM('mAdmEditBorrow');
+      setTimeout(function(){loadAll().then(function(){if(typeof renderAdminBorrows==='function')renderAdminBorrows();});},1200);
+    }catch(e){bigToast('ยกเลิกการคืนล้มเหลว\n'+e.message,'error');}
+  };
 })();
 </script>
 </body>
