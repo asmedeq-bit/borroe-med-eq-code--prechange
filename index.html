@@ -5662,7 +5662,10 @@ var API = {
     var prev=Array.isArray(rec.returned_accs)?rec.returned_accs:[];var added=Array.isArray(returnData.newReturnedAccs)?returnData.newReturnedAccs:[];
     added.forEach(function(nr){if(!prev.some(function(p){return p.id===nr.id;}))prev.push({id:nr.id,name:nr.name||'',no:nr.no||'',date:nr.date||returnData.returnDate||'',receiver:nr.receiver||''});});
     // ถ้าคืนอุปกรณ์อย่างเดียว (เครื่องคืนไปแล้ว) → ไม่เขียนทับ return_remark เดิม
-    var patchBody={return_date:returnData.returnDate||null,machine_returned:machineReturned,returned_accs:prev,status:newStatus,receiver_name:returnData.receiverName||''};
+    var patchBody={return_date:returnData.returnDate||null,machine_returned:machineReturned,returned_accs:prev,status:newStatus};
+    // §RCV-KEEP: ผู้รับคืนระดับใบยืม = ผู้รับ "ตัวเครื่อง" เท่านั้น — เขียนเฉพาะตอนคืนตัวเครื่องครั้งนี้
+    // (คืนอุปกรณ์อย่างเดียวไม่เขียนทับ; ผู้รับรายชิ้นเก็บใน returned_accs[].receiver อยู่แล้ว)
+    if(machineReturned&&!returnData.machineAlreadyReturned)patchBody.receiver_name=returnData.receiverName||'';
     if(!returnData.machineAlreadyReturned){patchBody.return_remark=returnData.returnRemark||'';patchBody.return_detail=returnData.returnDetail||'';}
     if(machineReturned&&!rec.machine_return_date)patchBody.machine_return_date=returnData.returnDate||null;
     if(machineReturned&&!rec.returned_at)patchBody.returned_at=new Date().toISOString();
@@ -10630,7 +10633,7 @@ function viewDet(loanID){
     (loan.EquipmentList||[]).forEach(function(e,idx){var b=bs.find(function(b){return N(b.EquipItemIndex)===idx;});var d=b?S(b.MachineReturnDate||b.ReturnDate):'';if(d>_endMr)_endMr=d;});
     if(_endMr&&ld)days=Math.max(0,Math.round((new Date(_endMr)-new Date(ld))/86400000));
   }
-  var html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px"><div><span style="color:var(--mu);font-size:10px">LOAN ID</span><br><span style="font-family:var(--mo);color:var(--ac)">'+lid+'</span></div><div><span style="color:var(--mu);font-size:10px">สถานะ</span><br>'+badge(_effStatus)+'</div><div><span style="color:var(--mu);font-size:10px">วันที่ยืม</span><br>'+ld+'</div><div><span style="color:var(--mu);font-size:10px">จำนวนวัน</span><br><span style="font-family:var(--mo)">'+days+' วัน</span></div><div><span style="color:var(--mu);font-size:10px">ผู้ยืม</span><br>'+ES(loan.BorrowerName)+'</div><div><span style="color:var(--mu);font-size:10px">แผนก</span><br>'+ES(loan.DeptName)+'</div><div style="grid-column:1/-1"><span style="color:var(--mu);font-size:10px">ผู้ป่วย</span><br>'+ES(loan.PatientName)+'</div></div><div style="background:var(--s2);border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">รายการเครื่องมือ ('+((loan.EquipmentList||[]).length)+' รายการ)</div>'+(loan.EquipmentList||[]).map(function(e,idx){var b=bs.find(function(b){return N(b.EquipItemIndex)===idx;});var itemStatus=computeStatus(b);var accHtml='';if(b&&b.Accessories&&b.Accessories.length){accHtml='<div style="margin-top:6px;padding:6px;background:var(--bg);border-radius:5px;font-size:12px">'+b.Accessories.map(function(a){var isRet=b.ReturnedAccs&&b.ReturnedAccs.some(function(r){return r.id===a.id;});var retAcc=isRet&&b.ReturnedAccs?b.ReturnedAccs.find(function(r){return r.id===a.id;}):null;var retAccDate=retAcc&&retAcc.date?retAcc.date:(isRet&&b.ReturnDate?b.ReturnDate:'');var retAccRcv=retAcc&&retAcc.receiver?retAcc.receiver:'';return'<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bd)"><span>'+esc(a.name||'?')+(a.no?' No.'+esc(a.no):'')+'</span>'+(isRet?'<span style="color:var(--ok);font-size:11px">✓ คืนแล้ว'+(retAccDate?' <span style="color:var(--mu);font-size:10px">('+retAccDate+')</span>':'')+(retAccRcv?' <span style="color:var(--mu);font-size:10px">ผู้รับ: '+esc(retAccRcv)+'</span>':'')+'</span>':'<span style="color:var(--er);font-size:11px">⏳ ยังไม่คืน</span>')+'</div>';}).join('')+'</div>';}var thHtml='';if(b&&b.TransferHistory&&b.TransferHistory.length){var _th=b.TransferHistory;var _origin;if(_th[0]&&S(_th[0].fromDept)){_origin=esc(S(_th[0].fromDept));}else if(_th[0]&&_th[0].note){var _nm=S(_th[0].note).match(/โอนจาก\s*(.+)/);_origin=_nm&&_nm[1].trim()?esc(_nm[1].trim()):ES(loan.DeptName);}else{_origin=ES(loan.DeptName);}var _bc=[_origin].concat(_th.map(function(t){return ES(t.toDept);}));var _bcHtml=_bc.map(function(d,i){var isCur=i===_bc.length-1;if(isCur)return'<span style="background:rgba(0,200,255,.12);border:1px solid rgba(0,200,255,.4);border-radius:4px;padding:1px 8px;color:var(--ac);font-weight:700;font-size:11px">'+d+' <span style="font-size:9px;opacity:.8">ปัจจุบัน</span></span>';return'<span style="background:var(--s2);border:1px solid var(--bd);border-radius:4px;padding:1px 8px;color:var(--mu);font-size:11px">'+d+'</span> <span style="color:var(--mu);font-size:10px">›</span> ';}).join('');var _steps=[{dept:_origin,date:S(loan.LoanDate),who:ES(loan.BorrowerName),isOrigin:true}];_th.forEach(function(t){_steps.push({dept:ES(t.toDept),date:S(t.date),who:ES(t.transfererName||''),isOrigin:false});});var _timelineHtml=_steps.map(function(step,si){var isLast=si===_steps.length-1;var dotStyle=isLast?'width:10px;height:10px;border-radius:50%;background:var(--ac);flex-shrink:0;margin-top:3px':'width:10px;height:10px;border-radius:50%;background:var(--s2);border:1.5px solid var(--bd);flex-shrink:0;margin-top:3px';var lineHtml=!isLast?'<div style="width:1px;flex:1;background:var(--bd);min-height:20px;margin:2px 0"></div>':'';var labelHtml=step.isOrigin?step.dept+' <span style="color:var(--mu);font-weight:400">(ต้นทาง)</span>':'โอน → '+step.dept+(isLast?' <span style="background:rgba(0,200,255,.15);color:var(--ac);font-size:10px;padding:0 6px;border-radius:99px;margin-left:4px">ปัจจุบัน</span>':'');return'<div style="display:flex;gap:10px;align-items:flex-start"><div style="display:flex;flex-direction:column;align-items:center;width:18px"><div style="'+dotStyle+'"></div>'+lineHtml+'</div><div style="padding-bottom:12px"><div style="font-size:12px;font-weight:700;color:var(--tx)">'+labelHtml+'</div><div style="font-size:11px;color:var(--mu);margin-top:2px">'+S(step.date)+(step.who?' · '+step.who:'')+'</div></div></div>';}).join('');thHtml='<div style="margin-top:8px;padding:10px 12px;background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.12);border-radius:7px"><div style="font-size:10px;color:var(--ac);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">เส้นทางการโอน</div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd)"><span style="font-size:11px;color:var(--mu)">เส้นทาง</span> '+_bcHtml+'</div>'+_timelineHtml+'</div>';}return'<div style="padding:5px 0;border-bottom:1px solid var(--bd)"><div style="display:flex;justify-content:space-between;align-items:center"><span><strong>#'+idx+'</strong> '+ES(e.name)+(e.detail?' — '+esc(e.detail):'')+'</span><div>'+badge(itemStatus)+' <span style="font-family:var(--mo)">×'+e.qty+'</span></div></div>'+(b?'<div style="font-size:11px;color:var(--mu);padding-top:2px;padding-left:11px">เลขเครื่อง: <span style="color:var(--ac);font-family:var(--mo)">'+(esc(S(b.EquipmentNo))||'—')+'</span> | ผู้ให้ยืม: '+ES(b.GiverName||'-')+(S(b.ReceiverName)?' | ผู้รับคืนเครื่อง: '+ES(b.ReceiverName):'')+(b.MachineReturnDate?' | <span style="color:var(--ok)">📅 คืนเครื่อง: '+S(b.MachineReturnDate)+'</span>':b.ReturnDate&&b.MachineReturned?' | <span style="color:var(--ok)">📅 คืนเครื่อง: '+S(b.ReturnDate)+'</span>':'')+(S(b.ReturnRemark)||S(b.ReturnDetail)?'<div style="padding-top:2px">📝 เหตุผลคืน: '+(ES(b.ReturnRemark)||'—')+(S(b.ReturnDetail)?' — <span style="color:var(--tx)">'+ES(b.ReturnDetail)+'</span>':'')+'</div>':'')+'</div>':'')+accHtml+thHtml+'</div>';}).join('')+'</div>';
+  var html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px"><div><span style="color:var(--mu);font-size:10px">LOAN ID</span><br><span style="font-family:var(--mo);color:var(--ac)">'+lid+'</span></div><div><span style="color:var(--mu);font-size:10px">สถานะ</span><br>'+badge(_effStatus)+'</div><div><span style="color:var(--mu);font-size:10px">วันที่ยืม</span><br>'+ld+'</div><div><span style="color:var(--mu);font-size:10px">จำนวนวัน</span><br><span style="font-family:var(--mo)">'+days+' วัน</span></div><div><span style="color:var(--mu);font-size:10px">ผู้ยืม</span><br>'+ES(loan.BorrowerName)+'</div><div><span style="color:var(--mu);font-size:10px">แผนก</span><br>'+ES(loan.DeptName)+'</div><div style="grid-column:1/-1"><span style="color:var(--mu);font-size:10px">ผู้ป่วย</span><br>'+ES(loan.PatientName)+'</div></div><div style="background:var(--s2);border-radius:6px;padding:10px;margin-bottom:10px"><div style="font-size:10px;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">รายการเครื่องมือ ('+((loan.EquipmentList||[]).length)+' รายการ)</div>'+(loan.EquipmentList||[]).map(function(e,idx){var b=bs.find(function(b){return N(b.EquipItemIndex)===idx;});var itemStatus=computeStatus(b);var accHtml='';if(b&&b.Accessories&&b.Accessories.length){accHtml='<div style="margin-top:6px;padding:6px;background:var(--bg);border-radius:5px;font-size:12px">'+b.Accessories.map(function(a){var isRet=b.ReturnedAccs&&b.ReturnedAccs.some(function(r){return r.id===a.id;});var retAcc=isRet&&b.ReturnedAccs?b.ReturnedAccs.find(function(r){return r.id===a.id;}):null;var retAccDate=retAcc&&retAcc.date?retAcc.date:(isRet&&b.ReturnDate?b.ReturnDate:'');var retAccRcv=retAcc&&retAcc.receiver?retAcc.receiver:'';return'<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--bd)"><span>'+esc(a.name||'?')+(a.no?' No.'+esc(a.no):'')+'</span>'+(isRet?'<span style="color:var(--ok);font-size:11px">✓ คืนแล้ว'+(retAccDate?' <span style="color:var(--mu);font-size:10px">('+retAccDate+')</span>':'')+(retAccRcv?' <span style="color:var(--mu);font-size:10px">ผู้รับ: '+esc(retAccRcv)+'</span>':'')+'</span>':'<span style="color:var(--er);font-size:11px">⏳ ยังไม่คืน</span>')+'</div>';}).join('')+'</div>';}var thHtml='';if(b&&b.TransferHistory&&b.TransferHistory.length){var _th=b.TransferHistory;var _origin;if(_th[0]&&S(_th[0].fromDept)){_origin=esc(S(_th[0].fromDept));}else if(_th[0]&&_th[0].note){var _nm=S(_th[0].note).match(/โอนจาก\s*(.+)/);_origin=_nm&&_nm[1].trim()?esc(_nm[1].trim()):ES(loan.DeptName);}else{_origin=ES(loan.DeptName);}var _bc=[_origin].concat(_th.map(function(t){return ES(t.toDept);}));var _bcHtml=_bc.map(function(d,i){var isCur=i===_bc.length-1;if(isCur)return'<span style="background:rgba(0,200,255,.12);border:1px solid rgba(0,200,255,.4);border-radius:4px;padding:1px 8px;color:var(--ac);font-weight:700;font-size:11px">'+d+' <span style="font-size:9px;opacity:.8">ปัจจุบัน</span></span>';return'<span style="background:var(--s2);border:1px solid var(--bd);border-radius:4px;padding:1px 8px;color:var(--mu);font-size:11px">'+d+'</span> <span style="color:var(--mu);font-size:10px">›</span> ';}).join('');var _steps=[{dept:_origin,date:S(loan.LoanDate),who:ES(loan.BorrowerName),isOrigin:true}];_th.forEach(function(t){_steps.push({dept:ES(t.toDept),date:S(t.date),who:ES(t.transfererName||''),isOrigin:false});});var _timelineHtml=_steps.map(function(step,si){var isLast=si===_steps.length-1;var dotStyle=isLast?'width:10px;height:10px;border-radius:50%;background:var(--ac);flex-shrink:0;margin-top:3px':'width:10px;height:10px;border-radius:50%;background:var(--s2);border:1.5px solid var(--bd);flex-shrink:0;margin-top:3px';var lineHtml=!isLast?'<div style="width:1px;flex:1;background:var(--bd);min-height:20px;margin:2px 0"></div>':'';var labelHtml=step.isOrigin?step.dept+' <span style="color:var(--mu);font-weight:400">(ต้นทาง)</span>':'โอน → '+step.dept+(isLast?' <span style="background:rgba(0,200,255,.15);color:var(--ac);font-size:10px;padding:0 6px;border-radius:99px;margin-left:4px">ปัจจุบัน</span>':'');return'<div style="display:flex;gap:10px;align-items:flex-start"><div style="display:flex;flex-direction:column;align-items:center;width:18px"><div style="'+dotStyle+'"></div>'+lineHtml+'</div><div style="padding-bottom:12px"><div style="font-size:12px;font-weight:700;color:var(--tx)">'+labelHtml+'</div><div style="font-size:11px;color:var(--mu);margin-top:2px">'+S(step.date)+(step.who?' · '+step.who:'')+'</div></div></div>';}).join('');thHtml='<div style="margin-top:8px;padding:10px 12px;background:rgba(0,200,255,.04);border:1px solid rgba(0,200,255,.12);border-radius:7px"><div style="font-size:10px;color:var(--ac);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">เส้นทางการโอน</div><div style="display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd)"><span style="font-size:11px;color:var(--mu)">เส้นทาง</span> '+_bcHtml+'</div>'+_timelineHtml+'</div>';}return'<div style="padding:5px 0;border-bottom:1px solid var(--bd)"><div style="display:flex;justify-content:space-between;align-items:center"><span><strong>#'+idx+'</strong> '+ES(e.name)+(e.detail?' — '+esc(e.detail):'')+'</span><div>'+badge(itemStatus)+' <span style="font-family:var(--mo)">×'+e.qty+'</span></div></div>'+(b?'<div style="font-size:11px;color:var(--mu);padding-top:2px;padding-left:11px">เลขเครื่อง: <span style="color:var(--ac);font-family:var(--mo)">'+(esc(S(b.EquipmentNo))||'—')+'</span> | ผู้ให้ยืม: '+ES(b.GiverName||'-')+(S(b.ReceiverName)&&b.MachineReturned?' | ผู้รับคืนเครื่อง: '+ES(b.ReceiverName):'')+(b.MachineReturnDate?' | <span style="color:var(--ok)">📅 คืนเครื่อง: '+S(b.MachineReturnDate)+'</span>':b.ReturnDate&&b.MachineReturned?' | <span style="color:var(--ok)">📅 คืนเครื่อง: '+S(b.ReturnDate)+'</span>':'')+(S(b.ReturnRemark)||S(b.ReturnDetail)?'<div style="padding-top:2px">📝 เหตุผลคืน: '+(ES(b.ReturnRemark)||'—')+(S(b.ReturnDetail)?' — <span style="color:var(--tx)">'+ES(b.ReturnDetail)+'</span>':'')+'</div>':'')+'</div>':'')+accHtml+thHtml+'</div>';}).join('')+'</div>';
   document.getElementById('detBody').innerHTML=html;openM('mDetail');
 }
 
@@ -18448,6 +18451,334 @@ window._omDeptList=function(){
       setTimeout(function(){loadAll().then(function(){if(typeof renderAdminBorrows==='function')renderAdminBorrows();});},1200);
     }catch(e){bigToast('ยกเลิกการคืนล้มเหลว\n'+e.message,'error');}
   };
+})();
+</script>
+<script>
+// §EXE-IMPORT — เว็บ: Admin → "📥 นำเข้าจาก EXE" (ส่งข้อมูลที่ลงใน EXE ขึ้นระบบออนไลน์)
+// ไฟล์: ไฟล์สำรองที่ดาวน์โหลดจากปุ่ม "💾 ดาวน์โหลดข้อมูลสำรองจาก EXE" (รูปแบบ v5)
+// หลักการ: "เพิ่ม/เติมความคืบหน้า" เท่านั้น — ไม่ลบอะไร · ไม่ทับของออนไลน์ที่ใหม่กว่า · ไม่พึ่งเวลาแก้ไข (ตารางส่วนใหญ่ไม่มี)
+//   ใบยืม (loan_requests, คีย์ loan_id)   : ไม่มีออนไลน์ → เพิ่ม · สถานะ EXE ก้าวหน้ากว่า (PENDING<ACTIVE<RETURNED) → อัปเดต · ออนไลน์ก้าวหน้ากว่า/เท่ากัน → ข้าม · ต่างกันแบบอื่น → "ชนกัน" (ค่าเริ่มต้นข้าม ให้ติ๊กเลือกเอง)
+//   บันทึกยืม (borrow_records, คีย์ record_id): เทียบความคืบหน้า = คืนเครื่อง(0/1), จำนวนอุปกรณ์ที่คืนแล้ว, จำนวนประวัติโอน → EXE ≥ ออนไลน์ทุกมิติและมากกว่าอย่างน้อยหนึ่ง → อัปเดต · มิติสวนกัน/ต่างแบบอื่น → ชนกัน
+//   ทะเบียนเครื่อง (equipment_units, คีย์ ชนิด+เลขเครื่อง): ไม่มีออนไลน์ → เพิ่ม · สถานะต่างกัน → แสดงให้เลือก (ติ๊กไว้ให้เฉพาะเครื่องที่อยู่ในใบที่จะนำเข้า)
+//   บันทึกซ่อม (equipment_maintenance_log): เพิ่มเฉพาะที่ยังไม่มี (ลายนิ้วมือ ชนิด+เลข+เหตุการณ์+วันที่+เวลาสร้าง) แล้ว remap unit_id
+//   ไม่แตะ: archive, app_settings, daily_snapshots, audit/error log
+// ก่อนเขียนจริง: แสดงตัวอย่าง + ยืนยัน + ดาวน์โหลดไฟล์ "ค่าเดิมก่อนนำเข้า" (ใช้ย้อนกลับ) · ทำซ้ำได้ ไม่สร้างข้อมูลซ้ำ
+(function(){
+  var RANK={PENDING:0,ACTIVE:1,RETURNED:2};
+  var NOCMP={created_at:1,updated_at:1,id:1};
+  var PAGE=1000;
+  // จากโครงสร้างจริงของ Supabase (ตรวจ 7 พ.ย. 2569): equipment_units.status มี CHECK จำกัดค่า · คอลัมน์ date/timestamp/numeric รับ '' ไม่ได้ (ต้องเป็น null)
+  // id ของ equipment_units / equipment_maintenance_log เป็น IDENTITY ALWAYS (ห้ามส่ง id) · loan_requests.status ถูก trigger sync_loan_status คำนวณใหม่จากบันทึกยืมเมื่อบันทึกยืมเปลี่ยน
+  var STATUS_OK={'คงเหลือ':1,'ยืม':1,'ซ่อม':1,'รอจำหน่าย':1,'ใช้ประจำแผนก':1,'ว่าง':1};
+  var NULLIFY={machine_return_date:1,returned_at:1,cost:1,unit_id:1,event_date:1};
+  var st={file:null,plan:null,busy:false};
+
+  function tsn(v){var s=S2(v);if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)){var t=Date.parse(s);if(isFinite(t))return 'T'+t;}return s;}
+  function norm(v){
+    if(v===undefined||v===null||v==='')return null;
+    if(typeof v==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v))return tsn(v);
+    if(Array.isArray(v))return v.map(norm);
+    if(typeof v==='object'){var o={};Object.keys(v).sort().forEach(function(k){o[k]=norm(v[k]);});return o;}
+    return v;
+  }
+  function jn(v){return JSON.stringify(norm(v));}
+  function arr(v){return Array.isArray(v)?v:[];}
+  function S2(v){return String(v===undefined||v===null?'':v).trim();}
+
+  // ดึงทั้งตารางแบบแบ่งหน้า (Supabase จำกัดแถวต่อคำขอ) — ถ้าได้ไม่ครบตามจำนวนจริง → หยุดด้วย error (ไม่เดา)
+  async function fetchAll(table,order){
+    var all=[],off=0,total=null;
+    for(;;){
+      var h=SB.headers();h.Prefer='count=exact';
+      var r=await SB._fetch(SB.url(table,'order='+order+'&limit='+PAGE+'&offset='+off),{headers:h});
+      if(!r.ok)throw new Error(table+': '+(await r.text()));
+      var rows=await r.json();
+      var mm=(r.headers.get('content-range')||'').match(/\/(\d+)$/);if(mm)total=parseInt(mm[1],10);
+      all=all.concat(rows);off+=rows.length;
+      if(!rows.length)break;
+      if(total!==null){if(off>=total)break;}
+      else if(rows.length<PAGE)break;
+    }
+    if(total!==null&&all.length<total)throw new Error(table+': ดึงข้อมูลออนไลน์ได้ '+all.length+' จาก '+total+' แถว (ไม่ครบ) — หยุดเพื่อความปลอดภัย');
+    return all;
+  }
+
+  function cols(online,sample){var k={};(online.length?online[0]:sample||{});Object.keys(online.length?online[0]:(sample||{})).forEach(function(c){k[c]=1;});return k;}
+  function pick(row,allow,omit){var o={};Object.keys(row).forEach(function(c){if(allow[c]&&!omit[c])o[c]=(NULLIFY[c]&&row[c]==='')?null:row[c];});return o;}
+  function eqName(loan,idx){var l=arr(loan&&loan.equipment_list);var e=l[idx||0]||l[0];return e&&typeof e==='object'?S2(e.name):S2(e);}
+
+  function bdims(b){
+    var mr=(b.machine_returned===true||S2(b.status).toUpperCase()==='RETURNED')?1:0;
+    return{mr:mr,acc:arr(b.returned_accs).length,th:arr(b.transfer_history).length};
+  }
+  function cmpDims(e,o){
+    var ge=e.mr>=o.mr&&e.acc>=o.acc&&e.th>=o.th,le=e.mr<=o.mr&&e.acc<=o.acc&&e.th<=o.th;
+    var eq=e.mr===o.mr&&e.acc===o.acc&&e.th===o.th;
+    return eq?'eq':ge?'ahead':le?'behind':'cross';
+  }
+  function sameRow(a,b,allow){
+    var ks={};Object.keys(a).concat(Object.keys(b)).forEach(function(k){if(allow[k]&&!NOCMP[k])ks[k]=1;});
+    var diff=[];Object.keys(ks).forEach(function(k){if(jn(a[k])!==jn(b[k]))diff.push(k);});
+    return diff;
+  }
+
+  // ── วางแผน (ไม่เขียนอะไรเลย) ──
+  window.exeImpPlan=function(file,on){
+    var P={loans:{nw:[],ahead:[],behind:0,conflict:[],same:0},borrows:{nw:[],ahead:[],behind:0,conflict:[],same:0},
+           units:{nw:[],diff:[],bad:[]},logs:{nw:[],noUnit:[]},skipped:{},warn:[]};
+    var allowL=cols(on.loans,arr(file.loan_requests)[0]),allowB=cols(on.borrows,arr(file.borrow_records)[0]);
+    var allowU=cols(on.units,arr(file.equipment_units)[0]),allowM=cols(on.logs,arr(file.equipment_maintenance_log)[0]);
+    var oL={},oB={},oU={};
+    on.loans.forEach(function(r){oL[r.loan_id]=r;});on.borrows.forEach(function(r){oB[r.record_id]=r;});
+    on.units.forEach(function(r){oU[S2(r.equipment_type)+'|'+S2(r.unit_no)]=r;});
+    var xL={};arr(file.loan_requests).forEach(function(r){xL[r.loan_id]=r;});
+    // ใบยืม
+    arr(file.loan_requests).forEach(function(e){
+      var o=oL[e.loan_id];
+      if(!o){P.loans.nw.push({key:e.loan_id,row:pick(e,allowL,{id:1}),label:S2(e.loan_date)+' · '+S2(e.dept_name)+' · '+S2(e.patient_name)});return;}
+      var diff=sameRow(e,o,allowL);if(!diff.length){P.loans.same++;return;}
+      var re=RANK[S2(e.status).toUpperCase()],ro=RANK[S2(o.status).toUpperCase()];
+      var it={key:e.loan_id,row:pick(e,allowL,{id:1,created_at:1,loan_id:1}),before:o,diff:diff,label:S2(e.loan_date)+' · '+S2(e.dept_name)+' · '+S2(e.patient_name)+'  ['+S2(o.status)+' → '+S2(e.status)+']'};
+      if(re!==undefined&&ro!==undefined&&re>ro)P.loans.ahead.push(it);
+      else if(re!==undefined&&ro!==undefined&&re<ro)P.loans.behind++;
+      else P.loans.conflict.push(it);
+    });
+    // บันทึกยืม
+    var touched={};
+    function touch(b){var loan=xL[b.loan_id]||oL[b.loan_id];var n=eqName(loan,b.equip_item_index);if(n&&S2(b.equipment_no))touched[n+'|'+S2(b.equipment_no)]=1;}
+    arr(file.borrow_records).forEach(function(e){
+      var o=oB[e.record_id];
+      if(!o){P.borrows.nw.push({key:e.record_id,row:pick(e,allowB,{id:1}),label:S2(e.loan_id)+' · เครื่อง '+S2(e.equipment_no)});touch(e);return;}
+      var diff=sameRow(e,o,allowB);if(!diff.length){P.borrows.same++;return;}
+      var c=cmpDims(bdims(e),bdims(o));
+      var it={key:e.record_id,row:pick(e,allowB,{id:1,created_at:1,record_id:1}),before:o,diff:diff,e:e,label:S2(e.loan_id)+' · เครื่อง '+S2(e.equipment_no)+'  [คืนเครื่อง '+(bdims(o).mr?'แล้ว':'ยัง')+' → '+(bdims(e).mr?'แล้ว':'ยัง')+' · อุปกรณ์คืน '+bdims(o).acc+' → '+bdims(e).acc+']'};
+      if(c==='ahead'){P.borrows.ahead.push(it);touch(e);}
+      else if(c==='behind')P.borrows.behind++;
+      else P.borrows.conflict.push(it);
+    });
+    // ทะเบียนเครื่อง
+    arr(file.equipment_units).forEach(function(e){
+      var k=S2(e.equipment_type)+'|'+S2(e.unit_no),o=oU[k];
+      if(S2(e.status)&&!STATUS_OK[S2(e.status)]){P.units.bad.push({key:k,label:S2(e.equipment_type)+' เลข '+S2(e.unit_no)+' — สถานะ "'+S2(e.status)+'" ฐานข้อมูลไม่อนุญาต'});return;}
+      if(!o){P.units.nw.push({key:k,row:pick(e,allowU,{id:1,created_at:1,updated_at:1}),label:S2(e.equipment_type)+' เลข '+S2(e.unit_no)+' ['+S2(e.status)+']'});return;}
+      if(S2(e.status)!==S2(o.status))P.units.diff.push({key:k,type:o.equipment_type,no:o.unit_no,from:S2(o.status),to:S2(e.status),touched:!!touched[k]});
+    });
+    // บันทึกซ่อม
+    var fp=function(r){return[S2(r.equipment_type),S2(r.unit_no),S2(r.event_type),S2(r.event_date),tsn(r.created_at)].join('|');};
+    var oM={};on.logs.forEach(function(r){oM[fp(r)]=1;});
+    var seen={};
+    arr(file.equipment_maintenance_log).forEach(function(e){
+      var k=fp(e);if(oM[k]||seen[k])return;seen[k]=1;
+      if(!S2(e.event_type)||!S2(e.event_date)){P.logs.noUnit.push({key:k,label:S2(e.equipment_type)+' เลข '+S2(e.unit_no)+' — ข้อมูลไม่ครบ (ไม่มีชนิดเหตุการณ์/วันที่)'});return;}
+      var uk=S2(e.equipment_type)+'|'+S2(e.unit_no);
+      var willHave=!!oU[uk]||P.units.nw.some(function(u){return u.key===uk;});
+      var it={key:k,uk:uk,row:pick(e,allowM,{id:1}),label:S2(e.equipment_type)+' เลข '+S2(e.unit_no)+' · '+S2(e.event_type)+' · '+S2(e.event_date)};
+      (willHave?P.logs.nw:P.logs.noUnit).push(it);
+    });
+    ['loan_requests_archive','borrow_records_archive','app_settings'].forEach(function(t){if(arr(file[t]).length)P.skipped[t]=file[t].length;});
+    return P;
+  };
+
+  // ── เขียนจริง (ตามที่เลือก) ──
+  async function insertBatches(table,rows){
+    var out=[];
+    for(var i=0;i<rows.length;i+=100){var r=await SB.post(table,rows.slice(i,i+100));out=out.concat(r);}
+    return out;
+  }
+  window.exeImpApply=async function(P,sel,onProgress){
+    var say=onProgress||function(){};var done={loans_new:0,loans_upd:0,borrows_new:0,borrows_upd:0,units_new:0,units_upd:0,logs_new:0};
+    var pick1=function(a,flag){return flag?a:[];};
+    var L_new=pick1(P.loans.nw,sel.nw),L_up=pick1(P.loans.ahead,sel.ahead).concat(P.loans.conflict.filter(function(x){return sel.cf[x.key];}));
+    var B_new=pick1(P.borrows.nw,sel.nw),B_up=pick1(P.borrows.ahead,sel.ahead).concat(P.borrows.conflict.filter(function(x){return sel.cf[x.key];}));
+    var U_new=pick1(P.units.nw,sel.nw),U_up=P.units.diff.filter(function(x){return sel.us[x.key];});
+    var M_new=pick1(P.logs.nw,sel.nw);
+    say('ใบยืม...');
+    if(L_new.length){await insertBatches('loan_requests',L_new.map(function(x){return x.row;}));done.loans_new=L_new.length;}
+    for(var i=0;i<L_up.length;i++){await SB.patch('loan_requests','loan_id=eq.'+encodeURIComponent(L_up[i].key),L_up[i].row);done.loans_upd++;}
+    say('บันทึกยืม...');
+    if(B_new.length){await insertBatches('borrow_records',B_new.map(function(x){return x.row;}));done.borrows_new=B_new.length;}
+    for(var j=0;j<B_up.length;j++){await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(B_up[j].key),B_up[j].row);done.borrows_upd++;}
+    say('ทะเบียนเครื่อง...');
+    var idByKey={};
+    if(U_new.length){var ins=await insertBatches('equipment_units',U_new.map(function(x){return x.row;}));ins.forEach(function(r){idByKey[S2(r.equipment_type)+'|'+S2(r.unit_no)]=r.id;});done.units_new=U_new.length;}
+    for(var k=0;k<U_up.length;k++){var u=U_up[k];await SB.patch('equipment_units','equipment_type=eq.'+encodeURIComponent(u.type)+'&unit_no=eq.'+encodeURIComponent(u.no),{status:u.to});done.units_upd++;}
+    if(M_new.length){
+      say('บันทึกซ่อม...');
+      var onU=await fetchAll('equipment_units','id.asc');onU.forEach(function(r){idByKey[S2(r.equipment_type)+'|'+S2(r.unit_no)]=r.id;});
+      var rows=M_new.map(function(x){var r=Object.assign({},x.row);if('unit_id' in r||true){var id=idByKey[x.uk];if(id!==undefined)r.unit_id=id;else delete r.unit_id;}return r;});
+      await insertBatches('equipment_maintenance_log',rows);done.logs_new=rows.length;
+    }
+    return done;
+  };
+
+  // ── ส่วนหน้าจอ ──
+  var E=function(s){return esc(S2(s));};
+  function list(items,max){
+    if(!items.length)return'';
+    var h=items.slice(0,max||30).map(function(x){return'<div style="font-size:11px;padding:2px 0;border-bottom:1px solid var(--bd)">'+E(x.label||x.key)+'</div>';}).join('');
+    if(items.length>(max||30))h+='<div style="font-size:11px;color:var(--mu);padding-top:3px">… และอีก '+(items.length-(max||30))+' รายการ</div>';
+    return'<div style="margin:4px 0 8px 12px;max-height:150px;overflow:auto">'+h+'</div>';
+  }
+  function row(label,n,color,body){
+    return'<details style="margin-bottom:4px"'+'><summary style="cursor:pointer;font-size:12px"><span style="color:'+color+';font-weight:700;display:inline-block;min-width:34px;text-align:right">'+n+'</span> '+label+'</summary>'+(body||'')+'</details>';
+  }
+  function render(P,meta){
+    var T=P.loans,B=P.borrows,U=P.units,M=P.logs;
+    var cfRows=function(items,kind){return items.map(function(x){return'<label style="display:flex;gap:6px;align-items:flex-start;font-size:11px;padding:3px 0;border-bottom:1px solid var(--bd)"><input type="checkbox" class="exeimp-cf" data-k="'+E(x.key)+'" data-t="'+kind+'"><span>'+E(x.label)+'<br><span style="color:var(--mu)">ต่างที่: '+E(x.diff.join(', '))+'</span></span></label>';}).join('');};
+    var usRows=U.diff.map(function(x){return'<label style="display:flex;gap:6px;align-items:flex-start;font-size:11px;padding:3px 0;border-bottom:1px solid var(--bd)"><input type="checkbox" class="exeimp-us" data-k="'+E(x.key)+'"'+(x.touched?' checked':'')+'><span>'+E(x.type)+' เลข '+E(x.no)+': ออนไลน์ "'+E(x.from)+'" → EXE "'+E(x.to)+'"'+(x.touched?' <span style="color:var(--ok)">(เกี่ยวกับใบที่นำเข้า)</span>':'')+'</span></label>';}).join('');
+    var nNew=T.nw.length+B.nw.length+U.nw.length+M.nw.length,nAhead=T.ahead.length+B.ahead.length;
+    return'<div style="font-size:12px;color:var(--mu);margin-bottom:8px">ไฟล์: <b>'+E(meta.name)+'</b> · ส่งออกเมื่อ '+E(meta.at)+' · '+E(meta.by)+'</div>'
+      +'<div style="font-size:13px;font-weight:700;margin:6px 0">ใบยืม (loan_requests)</div>'
+      +row('เพิ่มใหม่ (ออนไลน์ยังไม่มี)',T.nw.length,'var(--ok)',list(T.nw))
+      +row('อัปเดต — EXE คืบหน้ากว่า',T.ahead.length,'var(--ac)',list(T.ahead))
+      +row('ข้าม — ออนไลน์คืบหน้ากว่า',T.behind,'var(--mu)')
+      +row('ชนกัน (ค่าเริ่มต้นข้าม ติ๊กเลือกใช้ของ EXE ได้)',T.conflict.length,'var(--wn)',cfRows(T.conflict,'L'))
+      +row('เหมือนกันแล้ว',T.same,'var(--mu)')
+      +'<div style="font-size:13px;font-weight:700;margin:10px 0 6px">บันทึกยืม (borrow_records)</div>'
+      +row('เพิ่มใหม่',B.nw.length,'var(--ok)',list(B.nw))
+      +row('อัปเดต — EXE คืบหน้ากว่า (เช่น คืนเครื่อง/คืนอุปกรณ์ใน EXE)',B.ahead.length,'var(--ac)',list(B.ahead))
+      +row('ข้าม — ออนไลน์คืบหน้ากว่า',B.behind,'var(--mu)')
+      +row('ชนกัน (ค่าเริ่มต้นข้าม ติ๊กเลือกใช้ของ EXE ได้)',B.conflict.length,'var(--wn)',cfRows(B.conflict,'B'))
+      +row('เหมือนกันแล้ว',B.same,'var(--mu)')
+      +'<div style="font-size:13px;font-weight:700;margin:10px 0 6px">ทะเบียนเครื่อง · บันทึกซ่อม</div>'
+      +row('เครื่องใหม่ในทะเบียน',U.nw.length,'var(--ok)',list(U.nw))
+      +row('สถานะเครื่องต่างจากออนไลน์ (ติ๊กเลือกที่จะใช้ของ EXE)',U.diff.length,'var(--wn)',usRows)
+      +(U.bad.length?row('เครื่องที่ข้าม (สถานะไม่อยู่ในรายการที่ฐานข้อมูลอนุญาต)',U.bad.length,'var(--er)',list(U.bad)):'')
+      +row('บันทึกซ่อมใหม่',M.nw.length,'var(--ok)',list(M.nw))
+      +(M.noUnit.length?row('บันทึกซ่อมที่ข้าม (ไม่พบเครื่องออนไลน์/ข้อมูลไม่ครบ)',M.noUnit.length,'var(--er)',list(M.noUnit)):'')
+      +(Object.keys(P.skipped).length?'<div style="font-size:11px;color:var(--mu);margin-top:8px">ไม่นำเข้า (ตั้งใจ): '+Object.keys(P.skipped).map(function(t){return t+' ('+P.skipped[t]+')';}).join(', ')+'</div>':'')
+      +'<div style="margin-top:12px;display:flex;flex-direction:column;gap:6px">'
+      +'<label style="font-size:12px;display:flex;gap:6px"><input type="checkbox" id="exeimpNew" checked> นำเข้ารายการใหม่ ('+nNew+')</label>'
+      +'<label style="font-size:12px;display:flex;gap:6px"><input type="checkbox" id="exeimpAhead" checked> อัปเดตรายการที่ EXE คืบหน้ากว่า ('+nAhead+')</label>'
+      +'</div>'
+      +'<div style="margin-top:12px"><button class="btn badm" id="exeimpGo" onclick="exeImpRun()">📥 นำเข้าตามที่เลือก</button> <span style="font-size:11px;color:var(--mu)">ก่อนเขียนจะดาวน์โหลดไฟล์ "ค่าเดิมก่อนนำเข้า" ให้อัตโนมัติ</span></div>';
+  }
+  function setRes(h){var el=document.getElementById('exeimpResult');if(el)el.innerHTML=h;}
+
+  window.exeImpLoad=async function(inp){
+    var f=inp.files&&inp.files[0];if(!f)return;
+    setRes('<span style="color:var(--mu)">กำลังอ่านไฟล์และดึงข้อมูลออนไลน์เพื่อเทียบ...</span>');
+    try{
+      var j=JSON.parse(await f.text());
+      if(!j||typeof j!=='object'||(!Array.isArray(j.loan_requests)&&!Array.isArray(j.borrow_records)))throw new Error('ไม่ใช่ไฟล์สำรองที่ถูกต้อง (ไม่พบ loan_requests / borrow_records)');
+      if(j.complete===false)throw new Error('ไฟล์นี้ไม่ครบ (complete=false) — ดาวน์โหลดจาก EXE ใหม่อีกครั้ง');
+      var on={loans:await fetchAll('loan_requests','loan_id.asc'),borrows:await fetchAll('borrow_records','record_id.asc'),
+              units:await fetchAll('equipment_units','id.asc'),logs:await fetchAll('equipment_maintenance_log','id.asc')};
+      st.file=j;st.plan=window.exeImpPlan(j,on);
+      st.meta={name:f.name,at:j.exported_at||'—',by:j.exported_by||'—'};
+      setRes(render(st.plan,st.meta));
+    }catch(e){st.plan=null;setRes('<span style="color:var(--er)">❌ '+E(e.message)+'</span>');}
+    finally{inp.value='';}
+  };
+  function selection(){
+    var cf={},us={};
+    document.querySelectorAll('.exeimp-cf').forEach(function(c){if(c.checked)cf[c.dataset.k]=1;});
+    document.querySelectorAll('.exeimp-us').forEach(function(c){if(c.checked)us[c.dataset.k]=1;});
+    return{nw:!!document.getElementById('exeimpNew').checked,ahead:!!document.getElementById('exeimpAhead').checked,cf:cf,us:us};
+  }
+  function dl(name,obj){
+    var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(obj)],{type:'application/json'}));a.download=name;
+    document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500);
+  }
+  window.exeImpRun=async function(){
+    if(!st.plan||st.busy)return;var P=st.plan,sel=selection();
+    var nCf=Object.keys(sel.cf).length,nUs=Object.keys(sel.us).length;
+    var cnt=(sel.nw?P.loans.nw.length+P.borrows.nw.length+P.units.nw.length+P.logs.nw.length:0)+(sel.ahead?P.loans.ahead.length+P.borrows.ahead.length:0)+nCf+nUs;
+    if(!cnt){alert('ไม่ได้เลือกรายการที่จะนำเข้า');return;}
+    var msg='นำเข้าข้อมูลจาก EXE ขึ้นระบบออนไลน์ (เขียนลง Supabase จริง)\n\n'
+      +(sel.nw?'• เพิ่มใหม่: ใบยืม '+P.loans.nw.length+' · บันทึกยืม '+P.borrows.nw.length+' · เครื่อง '+P.units.nw.length+' · บันทึกซ่อม '+P.logs.nw.length+'\n':'')
+      +(sel.ahead?'• อัปเดตที่ EXE คืบหน้ากว่า: ใบยืม '+P.loans.ahead.length+' · บันทึกยืม '+P.borrows.ahead.length+'\n':'')
+      +(nCf?'• ชนกันที่เลือกใช้ของ EXE: '+nCf+'\n':'')+(nUs?'• เปลี่ยนสถานะเครื่อง: '+nUs+'\n':'')
+      +'\nไม่มีการลบข้อมูล · จะดาวน์โหลดไฟล์ "ค่าเดิมก่อนนำเข้า" ให้ก่อน\nยืนยันนำเข้า?';
+    if(!confirm(msg))return;
+    st.busy=true;var btn=document.getElementById('exeimpGo');if(btn)btn.disabled=true;
+    try{
+      // ค่าเดิมของแถวที่จะถูกแก้ + รายการคีย์ที่จะเพิ่ม (ใช้ย้อนกลับ)
+      var up=function(items,ok){return items.filter(ok).map(function(x){return x.before;});};
+      var snap={created_at:new Date().toISOString(),note:'ค่าเดิมก่อนนำเข้าจาก EXE — ย้อนกลับ: อัปเดตแถวด้านล่างกลับเป็นค่านี้ และลบแถวที่เพิ่มใหม่ตามรายการคีย์',
+        loan_requests_before:(sel.ahead?P.loans.ahead:[]).concat(P.loans.conflict.filter(function(x){return sel.cf[x.key];})).map(function(x){return x.before;}),
+        borrow_records_before:(sel.ahead?P.borrows.ahead:[]).concat(P.borrows.conflict.filter(function(x){return sel.cf[x.key];})).map(function(x){return x.before;}),
+        equipment_units_status_before:P.units.diff.filter(function(x){return sel.us[x.key];}).map(function(x){return{equipment_type:x.type,unit_no:x.no,status:x.from};}),
+        added:{loan_requests:sel.nw?P.loans.nw.map(function(x){return x.key;}):[],borrow_records:sel.nw?P.borrows.nw.map(function(x){return x.key;}):[],equipment_units:sel.nw?P.units.nw.map(function(x){return x.key;}):[],equipment_maintenance_log:sel.nw?P.logs.nw.map(function(x){return x.key;}):[]}};
+      var d=new Date(),p2=function(n){return(n<10?'0':'')+n;};
+      dl('MedEquip_PreImport_'+d.getFullYear()+p2(d.getMonth()+1)+p2(d.getDate())+'_'+p2(d.getHours())+p2(d.getMinutes())+'.json',snap);
+      var done=await window.exeImpApply(P,sel,function(t){setRes('<span style="color:var(--mu)">กำลังนำเข้า: '+E(t)+'</span>');});
+      if(typeof _auditLog==='function')_auditLog('import_from_exe',st.meta.name,done);
+      setRes('<span style="color:var(--ok)">✅ นำเข้าสำเร็จ</span><div style="font-size:12px;margin-top:6px">เพิ่มใหม่: ใบยืม '+done.loans_new+' · บันทึกยืม '+done.borrows_new+' · เครื่อง '+done.units_new+' · บันทึกซ่อม '+done.logs_new
+        +'<br>อัปเดต: ใบยืม '+done.loans_upd+' · บันทึกยืม '+done.borrows_upd+' · สถานะเครื่อง '+done.units_upd+'</div><div style="font-size:11px;color:var(--mu);margin-top:6px">ทำซ้ำได้ ไม่สร้างข้อมูลซ้ำ · รีเฟรชหน้าเพื่อดูข้อมูลล่าสุด</div>');
+      st.plan=null;
+      if(typeof loadAll==='function')setTimeout(function(){loadAll();},800);
+    }catch(e){
+      setRes('<span style="color:var(--er)">❌ นำเข้าหยุดกลางทาง: '+E(e.message)+'</span><div style="font-size:11px;color:var(--mu);margin-top:6px">บางส่วนอาจเขียนไปแล้ว — เลือกไฟล์เดิมใหม่ ระบบจะเทียบและนำเข้าเฉพาะที่ยังไม่ครบ (ไม่ซ้ำ)</div>');
+    }finally{st.busy=false;}
+  };
+
+  // ── ดาวน์โหลดข้อมูลสำรองจากออนไลน์ (ไฟล์ v5 เดียวกับ backup_medical.py → นำเข้า EXE ได้ที่ Admin → นำเข้าข้อมูลเก่า) ──
+  // อ่านอย่างเดียว · ดึงแบบแบ่งหน้าและตรวจครบตามจำนวนจริง — ตารางไหนดึงไม่ครบ = ไม่สร้างไฟล์ (ไม่ให้ไฟล์ที่ขาดโดยไม่รู้ตัว)
+  var BK=[['loan_requests','loan_id.asc'],['borrow_records','record_id.asc'],['loan_requests_archive','loan_id.asc'],['borrow_records_archive','record_id.asc'],['equipment_units','id.asc'],['equipment_maintenance_log','id.asc'],['app_settings','key.asc']];
+  window.exeImpBackupBuild=async function(onProgress){
+    var data={};
+    for(var i=0;i<BK.length;i++){
+      if(onProgress)onProgress(BK[i][0]+' ('+(i+1)+'/'+BK.length+')');
+      data[BK[i][0]]=await fetchAll(BK[i][0],BK[i][1]);
+    }
+    var L=data.loan_requests,B=data.borrow_records,n=function(a,k,v){return a.filter(function(x){return x[k]===v;}).length;};
+    var out={exported_at:new Date().toISOString(),exported_by:'MedEquip Online (web)',source:'online',version:5,
+      note:'ไฟล์สำรองจากระบบออนไลน์ — นำเข้า EXE ได้ที่ Admin → นำเข้าข้อมูลเก่าจาก Supabase (.json)',complete:true,export_errors:{},
+      stats:{total_loans:L.length,total_borrows:B.length,active_loans:n(L,'status','ACTIVE'),returned_loans:n(L,'status','RETURNED'),pending_loans:n(L,'status','PENDING'),
+             active_borrows:n(B,'status','ACTIVE'),returned_borrows:n(B,'status','RETURNED')}};
+    BK.forEach(function(t){out[t[0]]=data[t[0]];});
+    out.tables={};BK.forEach(function(t){out.tables[t[0]]=data[t[0]].length;});
+    return out;
+  };
+  window.exeImpBackupDownload=async function(){
+    var el=document.getElementById('exeimpBkResult'),btn=document.getElementById('exeimpBkBtn');
+    if(btn)btn.disabled=true;
+    var say=function(h){if(el)el.innerHTML=h;};
+    try{
+      var out=await window.exeImpBackupBuild(function(t){say('<span style="color:var(--mu)">กำลังดึง '+E(t)+' ...</span>');});
+      var d=new Date(out.exported_at),p2=function(x){return(x<10?'0':'')+x;};
+      var name='MedEquip_Online_Backup_'+d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'_'+p2(d.getHours())+p2(d.getMinutes())+'.json';
+      dl(name,out);
+      say('<span style="color:var(--ok)">✅ ดาวน์โหลดแล้ว: '+E(name)+'</span><div style="color:var(--mu);margin-top:3px">'
+        +Object.keys(out.tables).filter(function(t){return out.tables[t]>0;}).map(function(t){return E(t)+': '+out.tables[t];}).join(' · ')
+        +'</div><div style="color:var(--mu);margin-top:3px">ไฟล์มีชื่อผู้ป่วย — เก็บรักษาเหมือนไฟล์ backup เดิม</div>');
+    }catch(e){say('<span style="color:var(--er)">❌ ไม่ได้สร้างไฟล์: '+E(e.message)+'</span><div style="color:var(--mu);margin-top:3px">ไม่มีการดาวน์โหลดไฟล์ที่ไม่ครบ — ลองใหม่อีกครั้ง</div>');}
+    finally{if(btn)btn.disabled=false;}
+  };
+
+  // ── แท็บใน Admin (รูปแบบเดียวกับแท็บ 📡 สถานะ Supabase) ──
+  function build(){
+    return'<div class="card"><div class="ctitle">💾 ดาวน์โหลดข้อมูลสำรองจากออนไลน์ (เพื่อนำไปใส่ใน EXE)</div>'
+      +'<div style="font-size:11px;color:var(--mu);margin-bottom:10px;line-height:1.6">กดเองเมื่อต้องการข้อมูลล่าสุด (เช่น ก่อนเปลี่ยนไปใช้ EXE) — อ่านอย่างเดียว ไม่แก้ข้อมูลออนไลน์ · นำเข้า EXE ที่ Admin → “นำเข้าข้อมูลเก่าจาก Supabase (.json)” · เป็นของเสริม ไม่ได้แทน backup รายวัน และถ้า Supabase ล่มอยู่จะกดไม่ได้ ให้ใช้ไฟล์ backup รายวันล่าสุดแทน</div>'
+      +'<button class="btn badm sm" id="exeimpBkBtn" onclick="exeImpBackupDownload()">💾 ดาวน์โหลดข้อมูลสำรอง (.json)</button>'
+      +'<div id="exeimpBkResult" style="font-size:12px;margin-top:10px;min-height:18px"></div></div>'
+      +'<div class="card"><div class="ctitle">📥 นำเข้าข้อมูลจาก EXE</div>'
+      +'<div style="font-size:11px;color:var(--mu);margin-bottom:10px;line-height:1.6">ใช้เมื่อระบบออนไลน์กลับมาใช้ได้แล้ว หลังใช้ EXE ชั่วคราว: ใน EXE กด “💾 ดาวน์โหลดข้อมูลสำรองจาก EXE” แล้วเลือกไฟล์ที่นี่ ระบบจะ<b>เทียบกับข้อมูลออนไลน์ก่อน</b>และแสดงตัวอย่าง ไม่ลบข้อมูลใดๆ ไม่ทับรายการที่ออนไลน์คืบหน้ากว่า</div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn badm sm" onclick="document.getElementById(\'exeimpFile\').click()">📂 เลือกไฟล์สำรองจาก EXE (.json)</button>'
+      +'<input type="file" id="exeimpFile" accept=".json" style="display:none" onchange="exeImpLoad(this)"></div>'
+      +'<div id="exeimpResult" style="font-size:12px"></div></div>';
+  }
+  function inject(){
+    var ac=document.getElementById('adminContent');if(!ac||document.getElementById('atab-exeimp'))return;
+    var tabs=ac.querySelector('.admin-tabs');
+    if(tabs){var b=document.createElement('button');b.className='atab';b.id='atab-exeimp';b.setAttribute('onclick',"showAdminTab('exeimp-mgr',this)");b.innerHTML='🔄 ข้อมูล ↔ EXE';tabs.appendChild(b);}
+    var pn=document.createElement('div');pn.className='admin-sub';pn.id='adm-exeimp-mgr';pn.style.display='none';pn.innerHTML=build();ac.appendChild(pn);
+  }
+  var _prevSAT=window.showAdminTab;
+  window.showAdminTab=function(id,el){
+    if(id==='exeimp-mgr'){
+      if(!document.getElementById('adm-exeimp-mgr'))inject();
+      document.querySelectorAll('.admin-sub').forEach(function(s){s.classList.remove('on');s.style.display='none';});
+      document.querySelectorAll('.atab').forEach(function(t){t.classList.remove('on');});
+      var p=document.getElementById('adm-exeimp-mgr');if(p){p.classList.add('on');p.style.display='';}
+      if(el)el.classList.add('on');
+    }else if(_prevSAT)_prevSAT.apply(this,arguments);
+  };
+  // เพิ่มปุ่มแท็บเมื่อหน้า Admin พร้อม (เรียกซ้ำได้ ไม่ซ้ำ)
+  window._exeImpInject=inject;
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(inject,0);});
+  if(document.readyState!=='loading')setTimeout(inject,0);
 })();
 </script>
 </body>
