@@ -2628,8 +2628,10 @@ function toggleTheme(){
         </div>
       </div>
       <div id="admEditAccWrap" style="display:none;border-top:1px solid var(--bd);margin-top:12px;padding-top:12px">
-        <div style="font-size:12px;color:var(--mu);margin-bottom:8px">หมายเลขอุปกรณ์ประกอบ</div>
+        <div style="font-size:12px;color:var(--mu);margin-bottom:8px">อุปกรณ์ประกอบ (แก้เลข / เพิ่ม / ลบ)</div>
         <div id="admEditAccList"></div>
+        <div id="admEditAccAdd"></div>
+        <div id="admEditAccSum"></div>
       </div>
       <div id="admEditRetAccWrap" style="display:none;border-top:1px solid var(--bd);margin-top:12px;padding-top:12px">
         <div style="font-size:12px;color:var(--mu);margin-bottom:8px">อุปกรณ์ประกอบที่บันทึกว่าคืนแล้ว (ลงผิดแก้ได้ที่นี่)</div>
@@ -11201,15 +11203,7 @@ function openEditBorrow(recID){
   document.getElementById('admEditRetRemark').value=S(b.ReturnRemark||'');
   document.getElementById('admEditRecStatus').value=S(b.Status);
   document.getElementById('admEditMachineRet').value=b.MachineReturned?'true':'false';
-  var accWrap=document.getElementById('admEditAccWrap'),accList=document.getElementById('admEditAccList');
-  if(b.Accessories&&b.Accessories.length){
-    accWrap.style.display='block';
-    accList.innerHTML=b.Accessories.map(function(a){
-      return'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="flex:1;font-size:13px">'+esc(a.name||'?')+'</span><input type="text" class="admEditAccNo" data-accid="'+a.id+'" value="'+esc(a.no||'')+'" placeholder="ไม่มีเลข" style="width:110px"></div>';
-    }).join('');
-  }else{
-    accWrap.style.display='none';accList.innerHTML='';
-  }
+  admAccInit(b);   // §ADM-ACC-EDIT: รายการอุปกรณ์ประกอบ (แก้เลข/เพิ่ม/ลบ)
   openM('mAdmEditBorrow');
 }
 async function admSaveEditBorrow(){
@@ -11225,28 +11219,15 @@ async function admSaveEditBorrow(){
     machine_returned:document.getElementById('admEditMachineRet').value==='true'
   };
   if(!_eqNoAdminOk(recID,body.equipment_no))return;   // หลายเลขในช่องเดียว / ไม่มีในทะเบียน (ถามยืนยัน)
-  var ACC_ID_TO_COL={a1:'acc1_flow_meter_pto',a2:'acc2_flow_meter_70',a3:'acc3_self_inflating',a4:'acc4_full_face_mask',a5:'acc5_nasal_cannula',a7:'acc7_regulator_pto',a6:'acc6_other'};
-  // อุปกรณ์ประกอบที่เพิ่มใหม่จากหน้า Admin (id ไม่อยู่ใน ACC_ID_TO_COL) ไม่มีคอลัมน์
-  // ตายตัวรองรับ — ต้องอัปเดตกลับเข้า accessories (jsonb) แยกต่างหาก ไม่งั้นแก้เลข/
-  // รายละเอียดของอุปกรณ์พวกนี้ในฟอร์มนี้แล้วจะหายเงียบๆ เหมือนกันบั๊กที่แก้ไปแล้ว
-  var origBorrow=borrows?borrows.find(function(x){return S(x.RecordID)===recID;}):null;
-  var extraAccs=[];
-  document.querySelectorAll('.admEditAccNo').forEach(function(inp){
-    var col=ACC_ID_TO_COL[inp.dataset.accid];
+  // §ADM-ACC-EDIT: อุปกรณ์ประกอบ (คอลัมน์ a1–a7 / accessories jsonb / returned_accs / สถานะ) ทำใน admAccCollect
+  var accRes=await admAccCollect(body,recID);
+  if(!accRes.ok)return;
 // ─────────────────────────────────────────────────────────── §ADMIN-BULK
 // แอดมิน: ค้นหาด่วน + Bulk actions
 // ───────────────────────────────────────────────────────────
-    if(col)body[col]=inp.value.trim()||'✓';
-    else{
-      var orig=origBorrow&&origBorrow.Accessories?origBorrow.Accessories.find(function(a){return a.id===inp.dataset.accid;}):null;
-      extraAccs.push({id:inp.dataset.accid,name:orig?orig.name:'?',no:inp.value.trim()});
-    }
-  });
-  if(origBorrow&&origBorrow.Accessories&&origBorrow.Accessories.some(function(a){return!ACC_ID_TO_COL[a.id];})){
-    body.accessories=extraAccs;
-  }
   try{
     await SB.patch('borrow_records','record_id=eq.'+encodeURIComponent(recID),body);
+    if(accRes.changed&&typeof _auditLog==='function')_auditLog('edit_accessories',recID,{added:accRes.added,removed:accRes.removed,status:accRes.status});
     bigToast('บันทึกการแก้ไขสำเร็จ\n'+recID,'success');closeM('mAdmEditBorrow');setTimeout(function(){loadAll().then(renderAdminBorrows);},1500);
   }catch(e){bigToast('บันทึกล้มเหลว\n'+e.message,'error');}
 }
@@ -18779,6 +18760,129 @@ window._omDeptList=function(){
   window._exeImpInject=inject;
   document.addEventListener('DOMContentLoaded',function(){setTimeout(inject,0);});
   if(document.readyState!=='loading')setTimeout(inject,0);
+})();
+</script>
+<script>
+// §ADM-ACC-EDIT — Admin แก้ไขบันทึกยืม: เพิ่ม / ลบ / แก้เลข "อุปกรณ์ประกอบ" (10 พ.ย. 2569)
+// เดิมหน้านี้แก้ได้แค่เลขของอุปกรณ์ที่มีอยู่ · เพิ่มปุ่มลบรายชิ้น + เพิ่มอุปกรณ์จากรายการที่ตั้งไว้ใน Admin
+// กติกาข้อมูล (ตรงกับตัวอ่าน API.getAllBorrows):
+//   • 7 ชนิดเดิม a1–a7 อยู่ในคอลัมน์ตายตัว: มี = ค่าไม่ว่าง ('✓' หรือเลข) · ไม่มี = ''
+//   • ชนิดที่เพิ่มจาก Admin (a8…) อยู่ใน accessories (jsonb) = [{id,name,no}]
+//   • ลบชิ้นที่ "คืนแล้ว" → ลบรายการใน returned_accs ของชิ้นนั้นด้วย (ไม่ทิ้งรายการค้างลอย)
+//   • สถานะ: แก้รายการแล้ว + คืนตัวเครื่องแล้ว → คำนวณใหม่ (ค้างอุปกรณ์ = ACC_PENDING / ครบ = RETURNED)
+//     เครื่องยังไม่คืน → ไม่แตะสถานะ · ไม่เขียนตารางอื่น (ไม่แตะทะเบียนเครื่อง equipment_units)
+//   • ก่อนบันทึกอ่านใบจากฐานข้อมูลสดเทียบกับตอนเปิด ถ้ามีคนแก้ระหว่างนั้น → หยุด ไม่เขียนทับ
+// ถูกเรียกจาก openEditBorrow (admAccInit) และ admSaveEditBorrow (admAccCollect)
+(function(){
+  var FIXED={a1:'acc1_flow_meter_pto',a2:'acc2_flow_meter_70',a3:'acc3_self_inflating',a4:'acc4_full_face_mask',a5:'acc5_nasal_cannula',a7:'acc7_regulator_pto',a6:'acc6_other'};
+  var FIXED_NAME={a1:'Oxygen flow meter pipeline with power take off',a2:'Oxygen flow meter pipeline 70 LPM',a3:'Self inflating bag',a4:'full face mask',a5:'Nasal cannula HFNC',a7:'Oxygen flow meter regulator with power take off',a6:'อื่นๆ'};
+  var st=null;
+  function sigModel(accs,ret){
+    var a=(accs||[]).map(function(x){return S(x.id)+'='+S(x.no);}).sort().join(',');
+    var r=(ret||[]).map(function(x){return S(x.id);}).sort().join(',');
+    return a+'|'+r;
+  }
+  function modelFromRow(r){
+    var accs=[];
+    Object.keys(FIXED).forEach(function(id){var v=r[FIXED[id]]||'';if(v&&String(v).trim())accs.push({id:id,no:v==='✓'?'':v});});
+    if(Array.isArray(r.accessories))r.accessories.forEach(function(x){accs.push({id:x.id,no:x.no});});
+    return accs;
+  }
+  function active(){return st.rows.filter(function(r){return r.state!=='del';});}
+  function newStatus(machine){
+    if(!machine)return null;
+    var pend=active().filter(function(r){return!r.returned;}).length;
+    return pend>0?'ACC_PENDING':'RETURNED';
+  }
+  function render(){
+    var wrap=document.getElementById('admEditAccWrap'),list=document.getElementById('admEditAccList'),add=document.getElementById('admEditAccAdd'),sum=document.getElementById('admEditAccSum');
+    if(!wrap||!list||!st)return;
+    wrap.style.display='block';
+    list.innerHTML=st.rows.length?st.rows.map(function(r,i){
+      var del=r.state==='del';
+      return'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap'+(del?';opacity:.5':'')+'">'
+        +'<span style="flex:1;min-width:150px;font-size:13px'+(del?';text-decoration:line-through':'')+'">'+esc(r.name||'?')
+        +(r.state==='new'?' <span style="font-size:10px;color:var(--ok)">ใหม่</span>':'')
+        +(r.returned?' <span style="font-size:10px;color:var(--mu)">คืนแล้ว</span>':'')+'</span>'
+        +'<input type="text" class="admEditAccNo" data-accid="'+esc(r.id)+'" value="'+esc(r.no||'')+'" placeholder="ไม่มีเลข" style="width:110px"'+(del?' disabled':'')+' oninput="admAccSetNo('+i+',this.value)">'
+        +(del?'<button type="button" class="btn bg sm" onclick="admAccUndoRemove('+i+')">↩ ไม่ลบ</button>'
+             :'<button type="button" class="btn ber sm" title="ลบอุปกรณ์ชิ้นนี้ออกจากใบ" onclick="admAccRemove('+i+')">✕</button>')+'</div>';
+    }).join(''):'<div style="font-size:12px;color:var(--mu);margin-bottom:8px">ไม่มีอุปกรณ์ประกอบ</div>';
+    var have={};active().forEach(function(r){have[r.id]=1;});
+    var cat=(typeof ACCS!=='undefined'&&Array.isArray(ACCS)?ACCS:[]).filter(function(c){return c&&c.id&&!have[c.id];});
+    // ชนิดที่เคยมีในใบแล้วลบ (state=del) ใช้ปุ่ม "ไม่ลบ" แทน ไม่ให้เพิ่มซ้ำ id เดียวกัน
+    var delIds={};st.rows.forEach(function(r){if(r.state==='del')delIds[r.id]=1;});
+    cat=cat.filter(function(c){return!delIds[c.id];});
+    add.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-top:4px"><select id="admEditAccSel" style="flex:1;min-width:0"><option value="">+ เพิ่มอุปกรณ์… ('+(cat.length?'เลือกจากรายการ':'ไม่มีชนิดที่เพิ่มได้')+')</option>'
+      +cat.map(function(c){return'<option value="'+esc(c.id)+'">'+esc(c.n||c.id)+'</option>';}).join('')+'</select>'
+      +'<button type="button" class="btn bg sm" onclick="admAccAdd()">เพิ่ม</button></div>';
+    var add_=st.rows.filter(function(r){return r.state==='new';}),del_=st.rows.filter(function(r){return r.state==='del';});
+    if(!add_.length&&!del_.length){sum.innerHTML='';return;}
+    var mSel=document.getElementById('admEditMachineRet'),machine=mSel&&mSel.value==='true';
+    var ns=newStatus(machine);
+    sum.innerHTML='<div style="margin-top:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);font-size:12px;line-height:1.7;color:var(--mu)">'
+      +(add_.length?'เพิ่ม: <b style="color:var(--tx)">'+add_.map(function(r){return esc(r.name);}).join(', ')+'</b><br>':'')
+      +(del_.length?'ลบ: <b style="color:var(--tx)">'+del_.map(function(r){return esc(r.name);}).join(', ')+'</b>'+(del_.some(function(r){return r.returned;})?' <span style="color:#f0c36b">(มีรายการ "คืนแล้ว" ของชิ้นที่ลบ จะถูกลบด้วย)</span>':'')+'<br>':'')
+      +(ns?'สถานะใบหลังบันทึก: <b style="color:var(--tx)">'+ns+'</b>':'เครื่องยังไม่คืน → ไม่เปลี่ยนสถานะ')+'</div>';
+  }
+  window.admAccInit=function(b){
+    var ret=Array.isArray(b.ReturnedAccs)?b.ReturnedAccs:[];
+    var retIds=ret.map(function(x){return S(x.id);});
+    var accs=Array.isArray(b.Accessories)?b.Accessories:[];
+    var _ms=document.getElementById('admEditMachineRet');
+    if(_ms&&!_ms._accBound){_ms._accBound=1;_ms.addEventListener('change',function(){if(st)render();});}
+    st={rec:S(b.RecordID),rows:accs.map(function(a){return{id:S(a.id),name:S(a.name)||FIXED_NAME[S(a.id)]||'?',no:S(a.no),state:'keep',returned:retIds.indexOf(S(a.id))>=0};}),sig:sigModel(accs,ret)};
+    render();
+  };
+  window.admAccSetNo=function(i,v){if(st&&st.rows[i])st.rows[i].no=v;};
+  window.admAccRemove=function(i){var r=st&&st.rows[i];if(!r)return;if(r.state==='new')st.rows.splice(i,1);else r.state='del';render();};
+  window.admAccUndoRemove=function(i){var r=st&&st.rows[i];if(!r)return;r.state='keep';render();};
+  window.admAccAdd=function(){
+    var sel=document.getElementById('admEditAccSel');var id=sel?sel.value:'';if(!id||!st)return;
+    if(st.rows.some(function(r){return r.id===id;}))return;
+    var c=(ACCS||[]).filter(function(x){return x&&x.id===id;})[0];if(!c)return;
+    st.rows.push({id:id,name:FIXED_NAME[id]||c.n||id,no:'',state:'new',returned:false});
+    render();
+  };
+  // เรียกจาก admSaveEditBorrow: เติมค่าอุปกรณ์ประกอบลง body · คืน {ok:false} ถ้าต้องหยุด (ไม่เขียนอะไร)
+  window.admAccCollect=async function(body,recID){
+    if(!st||st.rec!==S(recID)){bigToast('ข้อมูลอุปกรณ์ประกอบยังไม่พร้อม\nกรุณาปิดแล้วเปิดหน้าต่างใหม่','error');return{ok:false};}
+    var fresh;
+    try{fresh=await SB.get('borrow_records','record_id=eq.'+encodeURIComponent(recID));}
+    catch(e){bigToast('อ่านข้อมูลล่าสุดไม่สำเร็จ\n'+e.message,'error');return{ok:false};}
+    if(!fresh||!fresh.length){bigToast('ไม่พบบันทึกนี้แล้ว (อาจถูกลบ)','error');return{ok:false};}
+    var fr=fresh[0];
+    var frRet=Array.isArray(fr.returned_accs)?fr.returned_accs:[];
+    if(sigModel(modelFromRow(fr),frRet)!==st.sig){bigToast('อุปกรณ์ประกอบของใบนี้ถูกแก้ไขจากที่อื่นระหว่างที่เปิดหน้านี้\nไม่บันทึกเพื่อกันข้อมูลทับกัน — กรุณาปิดแล้วเปิดใหม่','error');return{ok:false};}
+    var added=st.rows.filter(function(r){return r.state==='new';}),removed=st.rows.filter(function(r){return r.state==='del';});
+    var kept=active();
+    var frExtra=Array.isArray(fr.accessories)?fr.accessories:[];
+    var hadExtra=frExtra.length>0;
+    // คอลัมน์ตายตัว: ที่ยังอยู่ = เลข หรือ ✓ · ที่ลบ = ''
+    kept.forEach(function(r){if(FIXED[r.id])body[FIXED[r.id]]=String(r.no||'').trim()||'✓';});
+    removed.forEach(function(r){if(FIXED[r.id])body[FIXED[r.id]]='';});
+    // ชนิดเพิ่มเอง (jsonb): คงฟิลด์เดิมของรายการเดิม แก้เฉพาะเลข
+    var extras=kept.filter(function(r){return!FIXED[r.id];}).map(function(r){
+      var o=frExtra.filter(function(x){return S(x.id)===r.id;})[0];
+      return o?Object.assign({},o,{no:String(r.no||'').trim()}):{id:r.id,name:r.name,no:String(r.no||'').trim()};
+    });
+    if(hadExtra||extras.length)body.accessories=extras;
+    var remRet=removed.filter(function(r){return r.returned;});
+    if(remRet.length){var rid={};remRet.forEach(function(r){rid[r.id]=1;});body.returned_accs=frRet.filter(function(x){return!rid[S(x.id)];});}
+    var changed=added.length>0||removed.length>0;
+    var ns=null;
+    if(changed){
+      ns=newStatus(body.machine_returned===true);
+      var msg='บันทึกการแก้ไขอุปกรณ์ประกอบ\n'+recID+'\n'
+        +(added.length?'\nเพิ่ม: '+added.map(function(r){return r.name;}).join(', '):'')
+        +(removed.length?'\nลบ: '+removed.map(function(r){return r.name;}).join(', '):'')
+        +(remRet.length?'\n(ลบรายการ "คืนแล้ว" ของ: '+remRet.map(function(r){return r.name;}).join(', ')+')':'')
+        +'\n\nสถานะ: '+(ns?S(fr.status)+' → '+ns:'ไม่เปลี่ยน (เครื่องยังไม่คืน)')+'\nยืนยัน?';
+      if(!confirm(msg))return{ok:false,cancel:true};
+      if(ns)body.status=ns;
+    }
+    return{ok:true,changed:changed,added:added.map(function(r){return r.name;}),removed:removed.map(function(r){return r.name;}),status:ns};
+  };
 })();
 </script>
 </body>
