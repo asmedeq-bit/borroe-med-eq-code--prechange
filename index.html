@@ -1169,7 +1169,7 @@ function toggleTheme(){
       <div style="position:relative;height:220px"><canvas id="cmpC3" role="img" aria-label="กราฟ Utilization เปอร์เซ็นต์"></canvas></div>
     </div>
     <div style="background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;margin-bottom:12px">
-      <div style="font-size:11px;color:var(--mu);margin-bottom:8px">เปรียบเทียบทุกเครื่องมือ ทุกปี — คลิกแถวเพื่อเลือก</div>
+      <div style="font-size:11px;color:var(--mu);margin-bottom:8px">เปรียบเทียบทุกเครื่องมือ ทุกปี — คลิกแถวเพื่อเลือก · Util % = เฉลี่ย/วัน ÷ Active ปัจจุบัน (ทะเบียนเครื่อง)</div>
       <div style="overflow-x:auto"><table id="cmpBigTbl" style="width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap"></table></div>
     </div>
     <div style="background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:12px 14px">
@@ -10457,13 +10457,14 @@ function _cmpDraw(){
     });
     var h='<tr style="background:var(--s2)"><th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--bd);white-space:nowrap">เครื่องมือ</th>';
     yrs.forEach(function(yr,i){
-      h+='<th colspan="2" style="padding:5px 8px;text-align:center;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd);white-space:nowrap;color:'+CLR[Math.min(i,4)]+'">'+_cmpLbl(yr)+'</th>';
+      h+='<th colspan="3" style="padding:5px 8px;text-align:center;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd);white-space:nowrap;color:'+CLR[Math.min(i,4)]+'">'+_cmpLbl(yr)+'</th>';
       if(i<yrs.length-1)h+='<th style="padding:5px 8px;text-align:center;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd);font-size:10px;color:var(--mu)">เทรนด์</th>';
     });
     h+='</tr><tr style="background:var(--s2)"><th style="padding:3px 8px;border-bottom:1px solid var(--bd)"></th>';
     yrs.forEach(function(yr,i){
       h+='<th style="padding:3px 8px;text-align:center;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd);font-size:10px;font-weight:400;color:var(--mu)">เฉลี่ย/วัน</th>'
-        +'<th style="padding:3px 8px;text-align:center;border-bottom:1px solid var(--bd);font-size:10px;font-weight:400;color:var(--mu)">ยืม</th>';
+        +'<th style="padding:3px 8px;text-align:center;border-bottom:1px solid var(--bd);font-size:10px;font-weight:400;color:var(--mu)">ยืม</th>'
+        +'<th style="padding:3px 8px;text-align:center;border-bottom:1px solid var(--bd);font-size:10px;font-weight:400;color:var(--mu)" title="Utilization = เฉลี่ย/วัน ÷ Active ปัจจุบัน (ทะเบียนเครื่อง) — ค่าเดียวกับกราฟ Utilization">Util %</th>';   // §CMP-UTIL
       if(i<yrs.length-1)h+='<th style="padding:3px 8px;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd)"></th>';
     });
     h+='</tr>';
@@ -10471,12 +10472,15 @@ function _cmpDraw(){
     eqHasData.forEach(function(eq2){
       rows+='<tr onclick="document.getElementById(\'cmpEq\').value=\''+esc(eq2)+'\';_cmpDraw();" style="cursor:pointer" onmouseover="this.style.background=\'rgba(0,200,255,.05)\'" onmouseout="this.style.background=\'\'"><td style="padding:4px 8px;border-bottom:1px solid var(--bd);white-space:nowrap;font-size:12px;color:var(--mu)">'+esc(eq2)+'</td>';
       var pA2=null;
+      var act2=_cmpActiveCount(eq2);   // §CMP-UTIL
       yrs.forEach(function(yr,i){
         var cArr2=_cmpLoanByMonth(eq2,yr).filter(function(v){return v!==null;});
         var avgA2=_cmpAvgByYear(eq2,yr);
         var sumC2=cArr2.length?cArr2.reduce(function(a,b){return a+b;},0):null;
         rows+='<td style="padding:4px 8px;text-align:center;border-bottom:1px solid var(--bd);border-left:1px solid var(--bd);font-family:var(--mo);font-size:12px;color:var(--ac)">'+(avgA2!==null?avgA2+_cmpSumS(eq2,yr):'—')+'</td>';
         rows+='<td style="padding:4px 8px;text-align:center;border-bottom:1px solid var(--bd);font-family:var(--mo);font-size:12px;color:var(--tx)">'+(sumC2!==null?sumC2.toLocaleString():'—')+'</td>';
+        var utl2=(avgA2!==null&&act2>0)?Math.round(avgA2/act2*1000)/10:null;   // §CMP-UTIL: สูตรเดียวกับกราฟ Utilization (yrUtil)
+        rows+='<td style="padding:4px 8px;text-align:center;border-bottom:1px solid var(--bd);font-family:var(--mo);font-size:12px;color:'+(utl2===null?'var(--mu)':utl2>=80?'#ef4444':utl2>=60?'#f59e0b':'var(--tx)')+'">'+(utl2!==null?utl2+'%':'—')+'</td>';
         if(i<yrs.length-1){
           var tr2='—';
           var nA2=_cmpAvgByYear(eq2,yrs[i+1]);
@@ -16909,34 +16913,36 @@ function changePIN(type){
       }
       var per={};(STAFF||[]).forEach(function(s){if(s&&s!=='อื่นๆ'){per[_swlName(s)]={};}});
       var colTot={};cols.forEach(function(c){colTot[c.k]={give:0,ret:0,tr:0};});
+      var inEv=[];   // §SWL-EQ: รายการที่นับจริง (ใช้แตกยอดรายเครื่องมือเมื่อคลิกตัวเลข)
       ev.forEach(function(e){
         if(!e.date){noDate++;return;}
         if(!inR(e.date))return;
         var k=keyOf(e.date);if(!colTot[k])return;
         var p=per[e.staff]||(per[e.staff]={});var c=p[k]||(p[k]={give:0,ret:0,tr:0});
-        c[e.type]++;colTot[k][e.type]++;
+        c[e.type]++;colTot[k][e.type]++;inEv.push({s:e.staff,k:k,t:e.type,q:e.eq});   // §SWL-EQ
       });
       var val=function(c){return !c?0:(met==='all'?c.give+c.ret+c.tr:c[met]);};
       var rows=Object.keys(per).map(function(n){var t=0;cols.forEach(function(c){t+=val(per[n][c.k]);});return{n:n,t:t};});
       rows.sort(function(a,b){if((a.n===_SWL_NONAME)!==(b.n===_SWL_NONAME))return a.n===_SWL_NONAME?1:-1;if(b.t!==a.t)return b.t-a.t;return a.n.localeCompare(b.n,'th');});
       var th='padding:7px 8px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--mu);font-weight:700;text-align:right;white-space:nowrap';
       var td='padding:6px 8px;border-bottom:1px solid var(--bd);font-size:13px;text-align:right';
-      var num=function(v,st){return '<td style="'+td+(st||'')+(v?'':';color:var(--mu)')+'">'+(v||'–')+'</td>';};
+      var num=function(v,st,at){return '<td'+(at&&v?at+' data-v="'+v+'" title="คลิกเพื่อดูแยกตามเครื่องมือ"':'')+' style="'+td+(st||'')+(at&&v?';cursor:pointer':'')+(v?'':';color:var(--mu)')+'">'+(v||'–')+'</td>';};
+      var qa=function(s,k,t){return ' class="swlq" data-s="'+esc(s)+'" data-k="'+k+'" data-t="'+t+'"';};   // §SWL-EQ
       var h='<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+';text-align:left">เจ้าหน้าที่</th>'
         +cols.map(function(c){return '<th style="'+th+'">'+esc(c.l)+'</th>';}).join('')+'<th style="'+th+'">รวม</th></tr></thead><tbody>';
       if(!rows.length||!cols.length)h+='<tr><td colspan="'+(cols.length+2)+'" style="'+td+';text-align:center;color:var(--mu)">ไม่มีข้อมูล</td></tr>';
       rows.forEach(function(r){
         h+='<tr><td style="'+td+';text-align:left'+(r.n===_SWL_NONAME?';color:var(--mu)':'')+'">'+esc(r.n)+'</td>'
-          +cols.map(function(c){return num(val(per[r.n][c.k]));}).join('')+num(r.t,';font-weight:700')+'</tr>';
+          +cols.map(function(c){return num(val(per[r.n][c.k]),'',qa(r.n,c.k,met));}).join('')+num(r.t,';font-weight:700',qa(r.n,'*',met))+'</tr>';
       });
       var tt={give:0,ret:0,tr:0},bd='border-top:2px solid var(--bd);';
       cols.forEach(function(c){TY.forEach(function(t){tt[t[0]]+=colTot[c.k][t[0]];});});
       TY.forEach(function(t,i){
         h+='<tr><td style="'+td+';text-align:left;'+(i===0?bd:'')+'font-weight:700;color:'+t[2]+'">รวม'+t[1]+'</td>'
-          +cols.map(function(c){return num(colTot[c.k][t[0]],';'+(i===0?bd:''));}).join('')+num(tt[t[0]],';font-weight:700;'+(i===0?bd:''))+'</tr>';
+          +cols.map(function(c){return num(colTot[c.k][t[0]],';'+(i===0?bd:''),qa('*',c.k,t[0]));}).join('')+num(tt[t[0]],';font-weight:700;'+(i===0?bd:''),qa('*','*',t[0]))+'</tr>';
       });
       var gT=function(c){return c.give+c.ret+c.tr;};
-      h+='<tr><td style="'+td+';text-align:left;font-weight:700">รวมทุกงาน</td>'+cols.map(function(c){return num(gT(colTot[c.k]),';font-weight:700');}).join('')+num(tt.give+tt.ret+tt.tr,';font-weight:700')+'</tr>';
+      h+='<tr><td style="'+td+';text-align:left;font-weight:700">รวมทุกงาน</td>'+cols.map(function(c){return num(gT(colTot[c.k]),';font-weight:700',qa('*',c.k,'all'));}).join('')+num(tt.give+tt.ret+tt.tr,';font-weight:700',qa('*','*','all'))+'</tr>';
       if(view==='year'&&cols.length>1){
         h+='<tr><td style="'+td+';text-align:left;color:var(--mu)">เทียบปีก่อน</td><td style="'+td+'"></td>'
           +cols.slice(1).map(function(c,i){var a=gT(colTot[cols[i].k]),b=gT(colTot[c.k]);
@@ -16951,7 +16957,7 @@ function changePIN(type){
       msg.innerHTML=n.map(esc).join('<br>');
       // เก็บผลที่วาดไว้ให้ปุ่ม Excel/พิมพ์ (§SWL-CMP-EXP) ส่งออกตรงกับบนจอ
       window._swlCmpLast={view:view,met:met,fy:fy,cols:cols.map(function(c){return{k:c.k,l:c.l};}),
-        rows:rows.map(function(r){return{n:r.n,v:cols.map(function(c){return val(per[r.n][c.k]);}),t:r.t};}),colTot:colTot,tt:tt,notes:n.slice()};
+        rows:rows.map(function(r){return{n:r.n,v:cols.map(function(c){return val(per[r.n][c.k]);}),t:r.t};}),colTot:colTot,tt:tt,notes:n.slice(),ev:inEv};
     };
     function ensure(){
       var p=$('adm-staffwork-mgr');if(!p)return;
@@ -17249,7 +17255,7 @@ function changePIN(type){
     var k=[].map.call(document.querySelectorAll('#cmpKpi > *'),tx).filter(Boolean);
     if(k.length){r.push([]);r.push(['สรุป KPI']);k.forEach(function(x){r.push([x]);});}
     var a=tbl(document.getElementById('cmpBigTbl'));
-    if(a.length){r.push([]);r.push(['เปรียบเทียบทุกเครื่องมือ ทุกปี (ค่าเฉลี่ย/วัน (ผลรวมก่อนหาร) · ยืม · เทรนด์)']);a.forEach(function(x){r.push(x);});}
+    if(a.length){r.push([]);r.push(['เปรียบเทียบทุกเครื่องมือ ทุกปี (ค่าเฉลี่ย/วัน (ผลรวมก่อนหาร) · ยืม · Util % · เทรนด์)']);a.forEach(function(x){r.push(x);});}
     var b=tbl(document.getElementById('cmpMthTbl'));
     if(b.length){r.push([]);r.push(['ค่าเฉลี่ยรายเดือน — ทุกปีเปรียบกัน · เครื่องมือ: '+eq]);b.forEach(function(x){r.push(x);});}
     return {rows:r,hasData:a.length>0||b.length>0};
@@ -19048,6 +19054,61 @@ window._omDeptList=function(){
         +'<div style="font-size:11px;color:var(--mu);margin-top:8px;line-height:1.6">เกณฑ์: Active ปัจจุบัน '+c.act+' × 80% → ≥ '+thr+' รายการยืม/วัน · วันติดกันรวมเป็นช่วงเดียว · นับทุกรายการยืมต่อวันเหมือนค่า Peak เดิม</div>';
     }catch(e){try{console.error('[hi80]',e);}catch(_){}return'';}
   };
+})();
+</script>
+<script>
+/* §SWL-EQ — Admin › ภาระงานเจ้าหน้าที่ › การ์ด "สรุปเปรียบเทียบ รายเดือน / รายปีงบประมาณ":
+   คลิกตัวเลขในตาราง → หน้าต่างแตกยอดเป็นรายเครื่องมือ (ยืม/คืน/โอน/รวม)
+   ใช้รายการที่ §SWL-CMP นับไว้แล้ว (window._swlCmpLast.ev) จึงตรงกับตัวเลขที่คลิกเสมอ · อ่านอย่างเดียว ไม่มีคำขอ/เขียนข้อมูล
+   ทุกส่วนห่อ try/catch — พังก็แค่คลิกไม่ได้ ตารางและปุ่ม Excel/พิมพ์เดิมไม่กระทบ */
+(function(){
+  try{
+    var TY=[['give','ยืม','#3b82f6'],['ret','คืน','#10b981'],['tr','โอน','#f59e0b']];
+    function mk(){
+      var m=document.getElementById('mSwlEq');if(m)return m;
+      m=document.createElement('div');m.className='mbk';m.id='mSwlEq';
+      m.innerHTML='<div class="mdl" style="max-width:560px"><div class="mhd"><div class="mttl">🔎 แตกยอดรายเครื่องมือ</div><button class="mcls" onclick="closeM(\'mSwlEq\')">✕</button></div>'
+        +'<div class="mbdy" id="swlEqBody"></div><div class="mftr"><button class="btn bg" onclick="closeM(\'mSwlEq\')">ปิด</button></div></div>';
+      document.body.appendChild(m);return m;
+    }
+    // คำนวณแตกยอด: s='*' = ทุกคน · k='*' = ทุกคอลัมน์ · ts = ชนิดที่นับ (ยืม/คืน/โอน)
+    window._swlEqBreak=function(s,k,ts){
+      var C=window._swlCmpLast;if(!C||!C.ev)return null;
+      var map={},tot={give:0,ret:0,tr:0},n=0;
+      C.ev.forEach(function(e){
+        if(s!=='*'&&e.s!==s)return;
+        if(k!=='*'&&String(e.k)!==String(k))return;
+        if(ts.indexOf(e.t)<0)return;
+        var r=map[e.q]||(map[e.q]={give:0,ret:0,tr:0});r[e.t]++;tot[e.t]++;n++;
+      });
+      var list=Object.keys(map).map(function(q){var r=map[q];return{q:q,give:r.give,ret:r.ret,tr:r.tr,t:r.give+r.ret+r.tr};});
+      list.sort(function(a,b){return b.t-a.t||a.q.localeCompare(b.q,'th');});
+      return{list:list,tot:tot,n:n};
+    };
+    function open(td){
+      var C=window._swlCmpLast;if(!C||!C.ev)return;
+      var s=td.getAttribute('data-s'),k=td.getAttribute('data-k'),tt=td.getAttribute('data-t'),shown=td.getAttribute('data-v');
+      var ts=tt==='all'?['give','ret','tr']:[tt];
+      var B=window._swlEqBreak(s,k,ts);if(!B)return;
+      var colL=k==='*'?(C.view==='month'?'รวมทั้งปีงบประมาณ '+C.fy:'รวมทุกปี'):((C.cols.filter(function(c){return String(c.k)===String(k);})[0]||{}).l||k);
+      var cols=TY.filter(function(t){return ts.indexOf(t[0])>=0;});
+      var th='padding:6px 8px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--mu);font-weight:700;text-align:right;white-space:nowrap';
+      var td0='padding:5px 8px;border-bottom:1px solid var(--bd);font-size:13px;text-align:right';
+      var h='<div style="font-size:12px;color:var(--mu);line-height:1.7;margin-bottom:8px"><b style="color:var(--tx)">'+esc(s==='*'?'ทุกคน':s)+'</b> · '+esc(colL)+' · '+esc(tt==='all'?'ยืม+คืน+โอน':cols[0][1])+'</div>'
+        +'<div style="font-size:12px;margin-bottom:8px">ตัวเลขที่คลิก = <b style="font-family:var(--mo)">'+esc(shown)+'</b> · ผลรวมรายเครื่องมือ = <b style="font-family:var(--mo)">'+B.n+'</b> '
+        +(String(B.n)===String(shown)?'<span style="color:var(--ok)">✅ ตรงกัน</span>':'<span style="color:var(--er)">⚠️ ไม่ตรงกัน</span>')+'</div>'
+        +'<div style="max-height:55vh;overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+';text-align:left">เครื่องมือ</th>'
+        +cols.map(function(t){return '<th style="'+th+';color:'+t[2]+'">'+t[1]+'</th>';}).join('')+(cols.length>1?'<th style="'+th+'">รวม</th>':'')+'</tr></thead><tbody>';
+      B.list.forEach(function(r){
+        h+='<tr><td style="'+td0+';text-align:left">'+esc(r.q)+'</td>'+cols.map(function(t){return '<td style="'+td0+(r[t[0]]?'':';color:var(--mu)')+'">'+(r[t[0]]||'–')+'</td>';}).join('')+(cols.length>1?'<td style="'+td0+';font-weight:700">'+r.t+'</td>':'')+'</tr>';
+      });
+      h+='<tr><td style="'+td0+';text-align:left;font-weight:700;border-top:2px solid var(--bd)">รวม</td>'+cols.map(function(t){return '<td style="'+td0+';font-weight:700;border-top:2px solid var(--bd)">'+B.tot[t[0]]+'</td>';}).join('')+(cols.length>1?'<td style="'+td0+';font-weight:700;border-top:2px solid var(--bd)">'+B.n+'</td>':'')+'</tr></tbody></table></div>';
+      mk();document.getElementById('swlEqBody').innerHTML=h;openM('mSwlEq');
+    }
+    document.addEventListener('click',function(e){
+      try{var td=e.target&&e.target.closest?e.target.closest('#swlCmpOut td.swlq'):null;if(td)open(td);}catch(err){try{console.warn('[swlEq]',err.message);}catch(_){}}
+    });
+  }catch(e){try{console.warn('swlEq init:',e.message);}catch(_){}}
 })();
 </script>
 </body>
