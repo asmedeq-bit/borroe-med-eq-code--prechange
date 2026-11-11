@@ -9287,19 +9287,36 @@ async function renderSum(r){
       if(d>30){circuitLocal.push({LoanID:S(item.loan.LoanID),LoanDate:ld,DeptName:S(item.loan.DeptName),PatientName:S(item.loan.PatientName),eqName:eqName,eqNo:item.borrow?S(item.borrow.EquipmentNo||'—'):'—',days:d});}
     });
     circuitLocal.sort(function(a,b){return b.days-a.days;});
+    // §CIR-NEAR: ใกล้ครบ 25–30 วัน — แสดงเพิ่มเท่านั้น (ไม่นับใน circuitLocal / ป้าย "เกิน 30 วัน" / เสียงเตือน / ไฟล์ CSV·XLS)
+    var circuitNear=[];
+    try{
+      expFiltered.forEach(function(item){
+        if(item.status!=='ACTIVE')return;
+        var eqName=S(item.eq.name);
+        if(!CIRCUIT_EQ.some(function(n){return eqName===n;}))return;
+        var ld=item.loan.LoanDate;if(!ld)return;
+        var d=Math.round((now-new Date(ld))/86400000);
+        if(d>=25&&d<=30){circuitNear.push({LoanID:S(item.loan.LoanID),LoanDate:ld,DeptName:S(item.loan.DeptName),PatientName:S(item.loan.PatientName),eqName:eqName,eqNo:item.borrow?S(item.borrow.EquipmentNo||'—'):'—',days:d});}
+      });
+    }catch(e){circuitNear=[];}
+    circuitNear.sort(function(a,b){return b.days-a.days;});
+    var nearBadge=circuitNear.length>0
+      ?'<span style="font-size:11px;color:var(--ac);font-weight:600;text-transform:none;letter-spacing:0;background:rgba(34,184,240,.1);border:1px solid rgba(34,184,240,.35);border-radius:4px;padding:1px 8px;margin-left:6px">🔵 ใกล้ครบ '+circuitNear.length+' รายการ</span>'
+      :'';
     var countBadge=circuitLocal.length>0
       ?'<span style="font-size:11px;color:var(--wn);font-weight:600;text-transform:none;letter-spacing:0;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:4px;padding:1px 8px;margin-left:6px">⚠️ '+circuitLocal.length+' รายการ</span>'
       :'<span style="font-size:11px;color:var(--ok);font-weight:600;text-transform:none;letter-spacing:0;margin-left:6px">✅ ปกติ</span>';
     var cirBars='';
-    if(circuitLocal.length>0){
-      var _cirMax=circuitLocal[0].days||1;
-      var _cirShow=circuitLocal.slice(0,20);
+    var _cirAll=circuitLocal.concat(circuitNear);   // §CIR-NEAR: กราฟรวมกลุ่มใกล้ครบ (เรียงมาก→น้อย เพราะ ≤30 < 31)
+    if(_cirAll.length>0){
+      var _cirMax=_cirAll[0].days||1;
+      var _cirShow=_cirAll.slice(0,20);
       var _cirBW=Math.max(22,Math.min(44,Math.floor(660/Math.max(_cirShow.length,1))));
       var _cirSvgW=_cirShow.length*(_cirBW+4)+60;
       var _cirBars=_cirShow.map(function(row,i){
         var hB=Math.round(row.days/_cirMax*60);
         var x=50+i*(_cirBW+4);
-        var col=row.days>=45?'#ef4444':'#f59e0b';
+        var col=row.days>=45?'#ef4444':row.days<=30?'#22b8f0':'#f59e0b';
         var lbl=esc(S(row.eqNo).substring(0,6)||S(row.DeptName).substring(0,4));
         return'<g style="cursor:pointer" onclick="(function(){var p=document.getElementById(\''+_cirUID+'\');var b=document.getElementById(\''+_cirUID+'_btn\');p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';})()"><title>'+ES(row.eqNo)+' '+ES(row.DeptName)+' '+row.days+' วัน</title>'
           +'<rect x="'+x+'" y="'+(8+60-hB)+'" width="'+_cirBW+'" height="'+hB+'" fill="'+col+'" rx="3" opacity=".85"/>'
@@ -9314,7 +9331,7 @@ async function renderSum(r){
         +[0,25,50,75,100].map(function(p){var yy=8+60-Math.round(p/100*60);var v=Math.round(_cirMax*p/100);return'<text x="43" y="'+(yy+3)+'" text-anchor="end" fill="#8b949e" font-size="9">'+v+'</text><line x1="46" y1="'+yy+'" x2="'+(_cirSvgW-2)+'" y2="'+yy+'" stroke="#30363d" stroke-width="0.4" stroke-dasharray="2,3"/>';}).join('')
         +_cirBars+'</svg></div>'
         +'<div style="font-size:11px;color:var(--mu);margin-bottom:4px;padding-left:50px">'
-        +'<span style="color:#ef4444">🔴 ≥45 วัน (เร่งด่วน)</span>  <span style="color:#f59e0b">🟡 31-44 วัน</span>  <span style="color:var(--ac)">💡 คลิกแท่งเพื่อดูตาราง</span>'
+        +'<span style="color:#ef4444">🔴 ≥45 วัน (เร่งด่วน)</span>  <span style="color:#f59e0b">🟡 31-44 วัน</span>'+(circuitNear.length?'  <span style="color:#22b8f0">🔵 25–30 วัน (ใกล้ครบ)</span>':'')+'  <span style="color:var(--ac)">💡 คลิกแท่งเพื่อดูตาราง</span>'
         +'</div>';
     }
     var cirTable=circuitLocal.length
@@ -9322,13 +9339,21 @@ async function renderSum(r){
         +circuitLocal.map(function(row){var dC=row.days>=45?'var(--er)':'var(--wn)';var urgency=row.days>=45?'🔴':'🟡';return'<tr class="cirow" data-lid="'+row.LoanID+'" style="background:rgba(245,158,11,.04)"><td style="font-family:var(--mo);font-size:11px;color:var(--ac)">'+row.LoanID+'</td><td>'+row.LoanDate+'</td><td><strong>'+esc(row.DeptName)+'</strong></td><td>'+esc(row.PatientName)+'</td><td>'+esc(row.eqName)+'</td><td style="font-family:var(--mo);color:var(--ac)">'+esc(row.eqNo)+'</td><td style="font-family:var(--mo);color:'+dC+';text-align:center;font-weight:700">'+urgency+' '+row.days+' วัน</td><td style="text-align:center"><button class="abt cirbtn" style="border-color:var(--ac);color:var(--ac);font-size:11px">👁 ดู</button></td></tr>';}).join('')
         +'</tbody></table></div>'
       :'<p style="color:var(--ok);text-align:center;padding:14px">✅ ไม่มีรายการที่ต้องเปลี่ยน Circuit ในขณะนี้</p>';
+    // §CIR-NEAR: ตารางกลุ่มใกล้ครบ 25–30 วัน (ตารางแยก — ตารางแรกของการ์ด = กลุ่มเกิน 30 วัน ซึ่งเป็นตัวที่ CSV/XLS อ่าน จึงไม่เปลี่ยน)
+    var cirNearTable=circuitNear.length
+      ?'<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:var(--ac)">🔵 ใกล้ครบ 25–30 วัน — วางแผนเปลี่ยน Circuit ('+circuitNear.length+')</div>'
+        +'<div class="dtw"><table class="dt"><thead><tr><th>LoanID</th><th>วันที่ยืม</th><th>แผนก</th><th>ผู้ป่วย</th><th>เครื่องมือ</th><th>หมายเลขเครื่อง</th><th style="text-align:center">วันที่ใช้</th><th style="text-align:center">ครบ 30 วันอีก</th><th style="text-align:center">รายละเอียด</th></tr></thead><tbody>'
+        +circuitNear.map(function(row){var left=30-row.days;return'<tr class="cirow" data-lid="'+esc(row.LoanID)+'"><td style="font-family:var(--mo);font-size:11px;color:var(--ac)">'+esc(row.LoanID)+'</td><td>'+esc(row.LoanDate)+'</td><td><strong>'+esc(row.DeptName)+'</strong></td><td>'+esc(row.PatientName)+'</td><td>'+esc(row.eqName)+'</td><td style="font-family:var(--mo);color:var(--ac)">'+esc(row.eqNo)+'</td><td style="font-family:var(--mo);color:#22b8f0;text-align:center;font-weight:700">🔵 '+row.days+' วัน</td><td style="font-family:var(--mo);color:var(--mu);text-align:center">'+(left>0?'อีก '+left+' วัน':'ครบ 30 วันแล้ว')+'</td><td style="text-align:center"><button class="abt cirbtn" style="border-color:var(--ac);color:var(--ac);font-size:11px">👁 ดู</button></td></tr>';}).join('')
+        +'</tbody></table></div>'
+        +'<div style="font-size:11px;color:var(--mu);margin-top:6px;line-height:1.6">กลุ่มนี้แสดงเพิ่มเพื่อวางแผน — ไม่นับในป้าย "เกิน 30 วัน" ไม่มีเสียงเตือน และไม่รวมในไฟล์ CSV/XLS (PDF/พิมพ์รวมอยู่ด้วย)</div>'
+      :'';
     window._cirHtml='<div class="card" data-sec="cir">'
       +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">'
-        +'<div><div class="ctitle" style="margin:0">🔄 Ventilator/HFNC ต้องเปลี่ยน Circuit (เกิน 30 วัน)'+countBadge+'</div>'+_chipLine(_snapChip('เครื่องที่กำลังยืม'))+'</div>'
-        +(circuitLocal.length?_secBtns('cir'):'')+(circuitLocal.length?'<button id="'+_cirUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_cirUID+'\');var b=document.getElementById(\''+_cirUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>':'')
+        +'<div><div class="ctitle" style="margin:0">🔄 Ventilator/HFNC ต้องเปลี่ยน Circuit (เกิน 30 วัน)'+countBadge+nearBadge+'</div>'+_chipLine(_snapChip('เครื่องที่กำลังยืม'))+'</div>'
+        +(circuitLocal.length?_secBtns('cir'):'')+((circuitLocal.length||circuitNear.length)?'<button id="'+_cirUID+'_btn" onclick="(function(){var p=document.getElementById(\''+_cirUID+'\');var b=document.getElementById(\''+_cirUID+'_btn\');if(p.style.display===\'none\'){p.style.display=\'\';b.textContent=\'▲ ซ่อนตาราง\';}else{p.style.display=\'none\';b.textContent=\'▼ ดูตาราง\';}})();" class="btn bg sm" style="font-size:11px">▼ ดูตาราง</button>':'')
       +'</div>'
       +cirBars
-      +'<div id="'+_cirUID+'" style="display:none">'+cirTable+'</div>'
+      +'<div id="'+_cirUID+'" style="display:none">'+cirTable+cirNearTable+'</div>'
       +'</div>';
   })();
 
@@ -16786,7 +16811,7 @@ function changePIN(type){
       avg:{n:'นับเครื่องที่ใช้อยู่แต่ละวัน (ชุดคำนวณเดียวกับหัวข้อ 🗓️ การใช้งานเครื่องมือ) · "วันนี้" ไม่นับเครื่องที่คืนแล้วแต่อุปกรณ์ค้าง',f:'AVG/วัน = รวมจำนวนเครื่องที่ใช้ ÷ จำนวนวันตามปฏิทิน (นับรวมวันที่ไม่มีเครื่องใช้ = 0) · Utilization % อิงค่าเฉลี่ยนี้',l:'ป้ายใต้ชื่อบอก "มีเครื่องใช้งาน N วัน" จากช่วงทั้งหมด'},
       om:{n:'ใบที่ยังมีตัวเครื่องไม่คืน (สถานะ ACTIVE) และยืมเกิน 1 เดือน · ไม่นับใบรอบันทึก/คืนครบแล้ว',f:'จำนวนวัน = วันยืม → วันนี้ · 🟡 31–59 วัน · 🔴 ≥ 60 วัน',l:'แสดง ณ วันนี้ ไม่ขึ้นกับช่วงวันที่'},
       eqd:{n:'จำนวนวันใช้งานสะสมต่อเครื่อง นับจากวันยืม → วันคืนตัวเครื่อง (ถ้ายังไม่คืนนับถึงวันนี้)',f:'ป้าย "กำลังใช้" = ตัวเครื่องยังไม่คืน (อุปกรณ์ค้างไม่นับ)'},
-      cir:{n:'เฉพาะ Ventilator, Ventilator transfer, HFNC, HFNC transfer ที่กำลังยืมอยู่ และยืมเกิน 30 วัน (ควรเปลี่ยน Circuit)',f:'จำนวนวัน = วันยืม → วันนี้ · 🟡 31–44 วัน · 🔴 ≥ 45 วัน',l:'แสดง ณ วันนี้'},
+      cir:{n:'เฉพาะ Ventilator, Ventilator transfer, HFNC, HFNC transfer ที่กำลังยืมอยู่ และยืมเกิน 30 วัน (ควรเปลี่ยน Circuit)',f:'จำนวนวัน = วันยืม → วันนี้ · 🟡 31–44 วัน · 🔴 ≥ 45 วัน · 🔵 25–30 วัน = ใกล้ครบ (แสดงเพิ่ม ไม่นับในป้าย/เสียงเตือน/ไฟล์ CSV·XLS)',l:'แสดง ณ วันนี้'},
       dp:{n:'นับจำนวนเครื่องแยกตามวันยืม × แผนก × ชนิดเครื่องมือ (1 เครื่อง = 1 รายการ)',l:'ใช้วันยืมเป็นเกณฑ์ ตามช่วงวันที่ที่เลือกในหัวข้อนี้'},
       streak:{n:'หาเครื่องที่ถูกใช้ต่อเนื่องเกินเกณฑ์วันที่ตั้งไว้ในการ์ด ย้อนหลัง 5 เดือน (ตามวันยืม)',f:'🟡 ต่ำกว่า 45 วัน · 🔴 ≥ 45 วัน',l:'ไม่รวมช่วงที่เก่ากว่า 5 เดือน'},
       all:{n:'รายการยืมทุกสถานะตามช่วงวันยืมที่เลือก · ปุ่ม CSV/XLS/PDF ของหัวข้อนี้ไม่นับใบยกเลิก',f:'จำนวนวัน = วันยืม → วันคืนตัวเครื่อง (ถ้ายังไม่คืนนับถึงวันนี้)',l:'หมวด "อุปกรณ์ค้าง" แสดงแยก ไม่รวมในการนับตัวเครื่อง'},
