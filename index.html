@@ -8658,6 +8658,8 @@ async function renderSum(r){
       peakDates:e.peakDates,dayData:snapMap[e.name]||{},col:e.col
     };
   });
+  // §HI80: ข้อมูลรายวันของ render นี้ (ไม่ค้างข้อมูลเก่าเหมือน _peakDetailMap) ใช้กับส่วน "เทียบการใช้งาน ≥80%"
+  window._hi80Src=snapStats.map(function(e){return{name:e.name,inv:e.inv,peak:e.peak,avg:e.avg,utilPct:e.utilPct,totalDays:e.totalDays,dayData:snapMap[e.name]||{}};});
   // จัดกลุ่มวันที่ Peak แบบละเอียด (คืนค่า array ของ object ไม่ใช่ string)
   // ใช้ทั้งใน modal (ตารางทุกช่วง) — ใช้ logic กลุ่มวันติดกันแบบเดียวกับ
   // _peakDateLabel/_peakFullHistory ด้านบน
@@ -8743,6 +8745,7 @@ async function renderSum(r){
           +'<th style="padding:6px 8px;text-align:center;font-size:11px">จำนวนวัน</th>'
           +'<th style="padding:6px 8px;text-align:center;font-size:11px">% ของ Active ปัจจุบัน</th>'
         +'</tr></thead><tbody>'+groupsRows+'</tbody></table></div>';
+    try{if(typeof _hi80DetailHtml==='function')body.innerHTML+=_hi80DetailHtml(name,d);}catch(e){}   // §HI80
     openM('mPeakDetail');
   };
 
@@ -8987,7 +8990,7 @@ async function renderSum(r){
               +'<canvas id="'+_barId+'" role="img" aria-label="Horizontal bar chart utilization per equipment"></canvas>'
             +'</div>'
           +'</div>'
-        +'</div>';
+        +'</div>'+(typeof _hi80Html==='function'?_hi80Html():'');   // §HI80
       })()
       +'</div>';
   }
@@ -18882,6 +18885,143 @@ window._omDeptList=function(){
       if(ns)body.status=ns;
     }
     return{ok:true,changed:changed,added:added.map(function(r){return r.name;}),removed:removed.map(function(r){return r.name;}),status:ns};
+  };
+})();
+</script>
+<script>
+// §HI80 — เทียบการใช้งาน ≥80% ของ Active ปัจจุบัน ทุกชนิดเครื่องมือ + ช่วงวันที่ ≥80% ในหน้า "รายละเอียด Peak" (10 พ.ย. 2569)
+// แสดงผลอย่างเดียว ไม่เขียนข้อมูล · ใช้ข้อมูลรายวันชุดเดียวกับตารางสรุป (window._hi80Src ← snapStats/snapMap ตอน render)
+// ไม่แตะ Peak / AVG / Utilization เดิม · นับแบบเดิม = ทุกรายการยืมต่อวัน (รวมเครื่องที่คืนแล้วยืมใหม่วันเดียวกัน)
+//   = ความต้องการใช้งานจริง (ตั้งใจ: ใช้ดูว่าเครื่องไม่พอตรงไหนเพื่อจัดหาเพิ่ม) จึงอาจมากกว่าจำนวนเครื่องจริงได้
+// เกณฑ์ "≥80%" = รายการยืมในวันนั้น ≥ 80% ของ Active ปัจจุบัน (เทียบเลขเต็ม: v×5 ≥ Active×4 ไม่ใช้ทศนิยม)
+// ทุกฟังก์ชันห่อ try/catch — ถ้าพังจะไม่แสดงส่วนนี้ และหน้าเดิมทำงานต่อได้
+(function(){
+  var TH=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  function fd(d){var p=String(d).split('-');return(+p[2])+' '+TH[(+p[1])-1]+' '+((+p[0])+543);}
+  function rl(r){return r.start===r.end?fd(r.start):fd(r.start)+' – '+fd(r.end);}
+  function ge80(v,act){return act>0&&v*5>=act*4;}
+  function pct(a,b){return b>0?Math.round(a/b*1000)/10:null;}
+  function ymdAdd(s,n){return new Date(Date.UTC(+s.slice(0,4),+s.slice(5,7)-1,+s.slice(8,10)+n)).toISOString().slice(0,10);}
+  function calc(dayData,inv,peak){
+    var act=inv&&inv.active!=null?+inv.active:0;
+    var dates=Object.keys(dayData||{}).sort(),n=dates.length;
+    var o={act:act,n:n,peak:peak,ok:act>0,days80:0,runs:[],over:0,longest:0,now:false};
+    if(!o.ok)return o;
+    var cur=null,prev=null;
+    dates.forEach(function(dt){
+      var v=dayData[dt]||0;
+      if(v>act)o.over++;
+      if(ge80(v,act)){
+        if(cur&&prev&&ymdAdd(prev,1)===dt){cur.end=dt;cur.days++;if(v>cur.max)cur.max=v;}
+        else{cur={start:dt,end:dt,days:1,max:v};o.runs.push(cur);}
+        o.days80++;
+      }else cur=null;
+      prev=dt;
+    });
+    o.runs.forEach(function(r){if(r.days>o.longest)o.longest=r.days;});
+    var last=dates[n-1],today=(typeof localDateStr==='function')?localDateStr(new Date()):'';
+    o.now=!!(n&&last===today&&o.runs.length&&o.runs[o.runs.length-1].end===last);
+    return o;
+  }
+  var CH=[['all','ทุกชนิด'],['hit','เคยเกิน 80%'],['now','ขณะนี้อยู่ในช่วง ≥80%'],['over','ความต้องการเกินจำนวนเครื่อง']];
+  window._hi80Html=function(){
+    try{
+      var src=window._hi80Src;if(!Array.isArray(src)||!src.length)return'';
+      var rows=src.map(function(e){return{e:e,c:calc(e.dayData,e.inv,e.peak)};});
+      rows.sort(function(a,b){
+        if(a.c.ok!==b.c.ok)return a.c.ok?-1:1;
+        if(b.c.days80!==a.c.days80)return b.c.days80-a.c.days80;
+        return(pct(b.e.peak,b.c.act)||0)-(pct(a.e.peak,a.c.act)||0);
+      });
+      var cnt={all:rows.length,hit:0,now:0,over:0};
+      rows.forEach(function(r){if(r.c.days80>0)cnt.hit++;if(r.c.now)cnt.now++;if(r.c.over>0)cnt.over++;});
+      var chips=CH.map(function(c,i){
+        return'<span class="hi80-chip" data-f="'+c[0]+'" onclick="_hi80Filter(\''+c[0]+'\')" style="cursor:pointer;border:1px solid '+(i===0?'var(--ac)':'var(--bd)')+';background:'+(i===0?'rgba(34,184,240,.1)':'var(--s2)')+';color:'+(i===0?'var(--ac)':'var(--mu)')+';border-radius:14px;padding:4px 12px;font-size:12px;user-select:none">'+c[1]+' ('+cnt[c[0]]+')</span>';
+      }).join('');
+      var body=rows.map(function(r){
+        var e=r.e,c=r.c,hit=c.days80>0,pp=pct(e.peak,c.act),pd=pct(c.days80,c.n);
+        var ppc=pp===null?'var(--mu)':pp>=80?'var(--er)':pp>=60?'var(--wn)':'var(--ok)';
+        var u=e.utilPct;
+        return'<tr class="hi80-row" data-eq="'+esc(e.name)+'" data-hit="'+(hit?1:0)+'" data-now="'+(c.now?1:0)+'" data-over="'+(c.over>0?1:0)+'" onclick="_hi80Open(this.dataset.eq)" title="คลิกเพื่อดูรายละเอียดช่วงที่ใช้งาน ≥80%" style="cursor:pointer'+(hit||!c.ok?'':';opacity:.5')+'">'
+          +'<td style="padding:7px 8px;text-align:left;font-weight:600;white-space:nowrap">'+esc(e.name)+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo)">'+(c.ok?c.act:'—')+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo)">'+e.peak+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo);color:'+ppc+'">'+(pp===null?'—':pp+'%')+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo)">'+(!c.ok?'—':hit?c.days80+' วัน':'0')+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo);min-width:90px">'+(hit?pd+'%<div style="height:6px;border-radius:3px;background:var(--bg,#0d1117);overflow:hidden;margin-top:3px"><i style="display:block;height:100%;width:'+Math.min(100,pd*2.4)+'%;background:var(--er)"></i></div>':(c.ok?'0%':'—'))+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo)">'+(hit?c.runs.length:'—')+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo)">'+(hit?c.longest+' วัน':'—')+'</td>'
+          +'<td style="padding:7px 8px;text-align:center">'+(c.now?'<span style="font-size:10px;padding:1px 7px;border-radius:8px;background:rgba(248,81,73,.15);color:var(--er)">อยู่ในช่วง</span>':'<span style="color:var(--mu)">—</span>')+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo)'+(c.over>0?';color:var(--wn)':'')+'" title="จำนวนวันที่รายการยืมต่อวันมากกว่า Active ปัจจุบัน">'+(!c.ok?'—':c.over>0?c.over+' วัน':'0')+'</td>'
+          +'<td style="padding:7px 8px;text-align:center;font-family:var(--mo);color:'+(u===null||u===undefined?'var(--mu)':u>=80?'var(--er)':u>=60?'var(--wn)':'var(--tx)')+'">'+(u===null||u===undefined?'—':u+'%')+'</td>'
+          +'</tr>';
+      }).join('');
+      var th=function(t,l){return'<th style="background:var(--s2);font-size:11px;padding:7px 8px;color:var(--mu);font-weight:600;text-align:'+(l?'left':'center')+';white-space:nowrap">'+t+'</th>';};
+      return'<div id="hi80Box" style="background:var(--s1);border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-top:14px">'
+        +'<div style="padding:12px 16px;border-bottom:1px solid var(--bd)">'
+          +'<div style="font-size:13px;font-weight:700;color:var(--tx)">🔥 เทียบการใช้งานเกิน 80% — ทุกชนิดเครื่องมือ</div>'
+          +'<div style="font-size:11px;color:var(--mu);margin-top:2px;line-height:1.6">เรียงตามจำนวนวันที่ใช้งาน ≥80% มาก → น้อย · ตามช่วงวันที่/ตัวกรองของหน้านี้ · คลิกแถวเพื่อดูรายละเอียดช่วงที่ใช้งาน ≥80%</div>'
+        +'</div>'
+        +'<div style="padding:12px 16px">'
+          +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+chips+'</div>'
+          +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:860px"><thead><tr>'
+            +th('ชนิดเครื่องมือ',1)+th('Active ปัจจุบัน')+th('Peak')+th('% Peak')+th('วันที่ ≥80%')+th('% ของวัน')+th('จำนวนช่วง')+th('ช่วงยาวสุด')+th('ขณะนี้')+th('วันที่ความต้องการเกินจำนวนเครื่อง')+th('Util เฉลี่ย')
+          +'</tr></thead><tbody id="hi80Body">'+body+'</tbody></table></div>'
+          +'<div id="hi80Empty" style="display:none;color:var(--mu);font-size:12px;padding:14px;text-align:center">ไม่มีรายการ</div>'
+          +'<div style="font-size:11px;color:var(--mu);margin-top:10px;line-height:1.7">'
+            +'เกณฑ์: วันที่มีรายการยืมอยู่ ≥ 80% ของ Active ปัจจุบัน (Active = ทั้งหมด − ไม่พร้อมใช้ − สำรองแผนก) · วันติดกันรวมเป็นช่วงเดียว · ถ้า Active ปัจจุบันเปลี่ยน ตัวเลขนี้จะเปลี่ยนตาม<br>'
+            +'นับทุกรายการยืมต่อวัน (เครื่องที่คืนแล้วยืมใหม่วันเดียวกันนับ 2) เหมือนค่า Peak/AVG เดิม จึงสะท้อนความต้องการใช้งานจริง · "วันที่ความต้องการเกินจำนวนเครื่อง" = วันที่รายการยืมมากกว่าจำนวนเครื่องที่มี (ต้องรอคืนก่อนจึงให้คนอื่นใช้ต่อได้) · "Util เฉลี่ย" คือค่าเดียวกับคอลัมน์ Utilization% ด้านบน'
+          +'</div>'
+        +'</div></div>';
+    }catch(e){try{console.error('[hi80]',e);}catch(_){}return'';}
+  };
+  window._hi80Filter=function(f){
+    try{
+      var box=document.getElementById('hi80Box');if(!box)return;
+      [].forEach.call(box.querySelectorAll('.hi80-chip'),function(c){
+        var on=c.dataset.f===f;
+        c.style.borderColor=on?'var(--ac)':'var(--bd)';c.style.background=on?'rgba(34,184,240,.1)':'var(--s2)';c.style.color=on?'var(--ac)':'var(--mu)';
+      });
+      var shown=0;
+      [].forEach.call(box.querySelectorAll('.hi80-row'),function(r){
+        var ok=f==='all'||(f==='hit'&&r.dataset.hit==='1')||(f==='now'&&r.dataset.now==='1')||(f==='over'&&r.dataset.over==='1');
+        r.style.display=ok?'':'none';if(ok)shown++;
+      });
+      var em=document.getElementById('hi80Empty');if(em)em.style.display=shown?'none':'block';
+    }catch(e){try{console.error('[hi80]',e);}catch(_){}}
+  };
+  window._hi80Open=function(name){
+    try{if(typeof _peakDetailOpen==='function')_peakDetailOpen(name);}catch(e){try{console.error('[hi80]',e);}catch(_){}}
+  };
+  // ต่อท้ายใน modal "รายละเอียด Peak" (เรียกจาก _peakDetailOpen) — ตารางเดิมไม่เปลี่ยน
+  window._hi80DetailHtml=function(name,d){
+    try{
+      if(!d)return'';
+      var c=calc(d.dayData,d.inv,d.peak);
+      var hd='<div style="font-size:13px;font-weight:700;margin:18px 0 8px">🔥 ช่วงที่ใช้งาน ≥ 80% ของ Active ปัจจุบัน</div>';
+      if(!c.ok)return hd+'<div style="font-size:11px;color:var(--wn)">⚠️ ไม่มีข้อมูล Active ปัจจุบัน — คำนวณไม่ได้</div>';
+      var thr=Math.ceil(c.act*4/5);
+      var chip=function(l,v,s,col){return'<div style="flex:1;min-width:120px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px"><div style="font-size:10px;color:var(--mu)">'+l+'</div><div style="font-size:16px;font-weight:700;font-family:var(--mo);margin:2px 0'+(col?';color:'+col:'')+'">'+v+'</div><div style="font-size:10px;color:var(--mu)">'+s+'</div></div>';};
+      var last=c.runs.length?c.runs[c.runs.length-1]:null;
+      var sum='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">'
+        +chip('วันที่ผ่านเกณฑ์ (≥'+thr+' รายการ)',c.days80+' / '+c.n+' วัน',(pct(c.days80,c.n)||0)+'% ของช่วงข้อมูล')
+        +chip('จำนวนช่วง',c.runs.length+' ช่วง',c.runs.length?'ช่วงที่ยาวสุด '+c.longest+' วัน':'ไม่เคยเกิน 80%')
+        +chip('ขณะนี้',c.now?'อยู่ในช่วง ≥80%':'ไม่อยู่ในช่วง',c.now&&last?'ตั้งแต่ '+fd(last.start)+' ('+last.days+' วัน)':'—',c.now?'var(--er)':'')
+        +'</div>';
+      if(!c.runs.length)return hd+sum+'<div style="font-size:12px;color:var(--mu)">ไม่มีวันที่ใช้งานถึง 80% ในช่วงข้อมูลนี้</div>';
+      var rws=c.runs.map(function(r,i){
+        var p=pct(r.max,c.act),col=p>=90?'var(--er)':'var(--wn)',ong=c.now&&i===c.runs.length-1;
+        return'<tr style="border-bottom:1px solid var(--bd)"><td style="padding:6px 8px;text-align:center;color:var(--mu);font-size:12px">'+(i+1)+'</td>'
+          +'<td style="padding:6px 8px;font-size:13px">'+rl(r)+(ong?' <span style="font-size:10px;color:var(--er)">ถึงปัจจุบัน</span>':'')+'</td>'
+          +'<td style="padding:6px 8px;text-align:center;font-family:var(--mo);font-size:13px">'+r.days+' วัน</td>'
+          +'<td style="padding:6px 8px;text-align:center;font-family:var(--mo);font-size:13px">'+r.max+'</td>'
+          +'<td style="padding:6px 8px;text-align:center;font-family:var(--mo);font-size:13px;color:'+col+'">'+p+'%<div style="height:6px;border-radius:3px;background:var(--bg,#0d1117);overflow:hidden;margin-top:3px"><i style="display:block;height:100%;width:'+Math.min(100,p)+'%;background:'+col+'"></i></div></td></tr>';
+      }).join('');
+      return hd+sum+'<div style="overflow:auto;max-height:300px"><table class="dt" style="width:100%;min-width:380px"><thead><tr>'
+        +'<th style="padding:6px 8px;text-align:center;font-size:11px">#</th><th style="padding:6px 8px;text-align:left;font-size:11px">ช่วงวันที่</th><th style="padding:6px 8px;text-align:center;font-size:11px">จำนวนวัน</th><th style="padding:6px 8px;text-align:center;font-size:11px">สูงสุดในช่วง</th><th style="padding:6px 8px;text-align:center;font-size:11px">% สูงสุด</th>'
+        +'</tr></thead><tbody>'+rws+'</tbody></table></div>'
+        +'<div style="font-size:11px;color:var(--mu);margin-top:8px;line-height:1.6">เกณฑ์: Active ปัจจุบัน '+c.act+' × 80% → ≥ '+thr+' รายการยืม/วัน · วันติดกันรวมเป็นช่วงเดียว · นับทุกรายการยืมต่อวันเหมือนค่า Peak เดิม</div>';
+    }catch(e){try{console.error('[hi80]',e);}catch(_){}return'';}
   };
 })();
 </script>
