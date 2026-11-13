@@ -19150,6 +19150,16 @@ window._omDeptList=function(){
       +'#stabMxTbl thead th.stab-g{font-size:11px;border-left:1px solid var(--bd)}#stabMxTbl .stab-gl{border-left:1px solid var(--bd)}'
       +'#stabMxTbl tbody tr{cursor:pointer}#stabMxTbl tbody tr:hover td{background:var(--s2)}'
       +'#stabMxTbl td{font-family:var(--mo)}#stabMxTbl td.stab-nm{font-family:var(--fn);font-weight:600}'
+      +'#stabMx .stab-cd{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer}'
+      +'#stabMx .stab-cd:active{border-color:var(--ac)}#stabMx .stab-cd-n{font-weight:700;font-size:14px;line-height:1.35;margin-bottom:2px;word-break:break-word}'
+      +'#stabMx .stab-cd-g{font-size:10.5px;color:var(--mu);margin:8px 0 4px;font-weight:700}'
+      +'#stabMx .stab-cd-k{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}'
+      +'#stabMx .stab-cd-k div{background:var(--s1);border-radius:7px;padding:5px 7px;font-size:10.5px;color:var(--mu);line-height:1.3}'
+      +'#stabMx .stab-cd-k b{display:block;font-size:15px;color:var(--tx);font-family:var(--mo);font-weight:600}'
+      +'#stabMx .stab-cs{display:flex;gap:6px;align-items:center;margin-bottom:8px}#stabMx .stab-cs select{flex:1;min-width:0;background:var(--s2);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:7px 8px;font:inherit;font-size:13px}'
+      +'#stabMx .stab-cs button{background:var(--s2);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:7px 12px;font:inherit;font-size:13px;cursor:pointer}'
+      +'@media(max-width:640px){#stabMx .stab-cards{display:block!important}#stabMx .stab-tblwrap,#stabMx .stab-tblnote{display:none!important}}'
+      +'@media(min-width:641px) and (max-width:1024px){#stabMxTbl .stab-nm{max-width:150px;white-space:normal;line-height:1.3}#stabMxTbl{font-size:12px}#stabMxTbl th,#stabMxTbl td{padding:6px 7px}}'
       +'.stab-dim{color:var(--mu)}.stab-er{color:var(--er);font-weight:700}.stab-wn{color:var(--wn);font-weight:700}'
       +'.stab-dr{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--s1);border-left:1px solid var(--bd);box-shadow:-8px 0 30px rgba(0,0,0,.35);transform:translateX(105%);transition:transform .2s;overflow:auto;padding:14px 16px;z-index:900;color:var(--tx)}'
       +'.stab-dr.on{transform:none}.stab-dr h3{font-size:12px;margin:14px 0 6px;color:var(--mu);font-weight:700}'
@@ -19341,6 +19351,29 @@ window._omDeptList=function(){
       S2.forEach(function(g){g.c.forEach(function(c,j){h+='<th class="stab-s'+(j===0?' stab-gl':'')+'" data-k="'+c[0]+'" title="'+E(c[2]||'')+'">'+E(c[1])+(sortK===c[0]?(sortD<0?' ▼':' ▲'):'')+'</th>';});});
       return h+'</tr></thead>';
     }
+    // การ์ดสำหรับจอแคบ (≤640px) — ค่าทุกตัวมาจาก cell()/txt() ตัวเดียวกับตาราง · ซ่อนด้วย inline style (หน้าต่างพิมพ์ไม่มี CSS นี้ จึงไม่ซ้ำกับตาราง)
+    function cardsHtml(S2,rows){
+      var opts=[['k','ชื่อเครื่องมือ']],have={k:1};
+      S2.forEach(function(g){g.c.forEach(function(c){have[c[0]]=1;opts.push([c[0],(g.c.length&&S2.length>1?g.t+' · ':'')+c[1]]);});});
+      if(sortK!=='k'&&!have[sortK]){var lb=sortK;GKEYS.forEach(function(k){GR[k].c.forEach(function(c){if(c[0]===sortK)lb=c[1];});});opts.push([sortK,lb+' (กลุ่มที่ซ่อนอยู่)']);}
+      var h='<div class="stab-cards" style="display:none"><div class="stab-cs"><span style="font-size:12px;color:var(--mu);flex:none">เรียงตาม</span>'
+        +'<select id="stabMxSort" aria-label="เรียงตาม">'+opts.map(function(o){return'<option value="'+E(o[0])+'"'+(o[0]===sortK?' selected':'')+'>'+E(o[1])+'</option>';}).join('')+'</select>'
+        +'<button type="button" data-sortdir="1" title="สลับลำดับ มาก↔น้อย">'+(sortD<0?'▼':'▲')+'</button></div>';
+      rows.forEach(function(r,i){
+        h+='<div class="stab-cd" data-i="'+i+'"><div class="stab-cd-n">'+E(r.k)+'</div>';
+        S2.forEach(function(g){
+          h+='<div class="stab-cd-g">'+E(g.t)+'</div><div class="stab-cd-k">';
+          g.c.forEach(function(c){h+='<div>'+E(c[1])+'<b>'+cell(r,c[0])+'</b></div>';});
+          h+='</div>';
+        });
+        h+='</div>';
+      });
+      h+='<div style="font-size:11px;color:var(--mu);margin-top:4px;line-height:1.7">แตะการ์ดเพื่อดูรายละเอียด · Util % ≥80% แดง · ≥60% เหลือง'
+        +'<br>นับทุกรายการยืมต่อวัน (เครื่องที่คืนแล้วยืมใหม่วันเดียวกันนับ 2) เหมือนค่า Peak/AVG เดิม = ความต้องการใช้งานจริง'
+        +(on.fy?'<br>ปีงบ: ปีปัจจุบันยังไม่ครบปี — “ยืม” เทียบตรงๆ กับปีที่ครบไม่ได้ ให้ดู “เฉลี่ย/วัน” · * = ข้อมูลไม่ครบปี':'')
+        +'</div></div>';
+      return h;
+    }
     function mxInner(){
       var m=M=model(),S2=segs(m),rows=sortRows(m.rows);M.sorted=rows;
       var ch=function(cls,act,lbl,o){return'<button type="button" class="stab-chip'+(o?' on':'')+'" data-'+cls+'="'+act+'">'+lbl+'</button>';};
@@ -19352,14 +19385,15 @@ window._omDeptList=function(){
       h+='<div style="font-size:11px;color:var(--mu);margin-bottom:8px;line-height:1.6">📆 <b>ช่วงที่เลือก</b> = '+E(rng)+(m.fEq?' · เฉพาะ '+E(m.fEq):'')+' — ปรับได้ที่ตัวกรอง “📈 ค่าเฉลี่ยการใช้งาน” ด้านบน (ช่วงเดียวกับตารางสรุปภาพรวมในแท็บนี้)</div>';
       if(!S2.length){h+='<div style="color:var(--mu);font-size:12px;padding:14px;text-align:center">เลือกกลุ่มคอลัมน์อย่างน้อย 1 กลุ่ม</div>';return h;}
       if(!rows.length){h+='<div style="color:var(--mu);font-size:12px;padding:14px;text-align:center">ไม่มีข้อมูล</div>';return h;}
-      h+='<div style="overflow-x:auto"><table id="stabMxTbl">'+head(m)+'<tbody>';
+      h+='<div class="stab-tblwrap" style="overflow-x:auto"><table id="stabMxTbl">'+head(m)+'<tbody>';
       rows.forEach(function(r,i){
         h+='<tr data-i="'+i+'" title="คลิกเพื่อดูรายละเอียด"><td class="stab-nm">'+E(r.k)+'</td>';
         S2.forEach(function(g){g.c.forEach(function(c,j){h+='<td'+(j===0?' class="stab-gl"':'')+'>'+cell(r,c[0])+'</td>';});});
         h+='</tr>';
       });
       h+='</tbody></table></div>';
-      h+='<div style="font-size:11px;color:var(--mu);margin-top:8px;line-height:1.7">คลิกหัวคอลัมน์เพื่อเรียง · คลิกแถวเพื่อดูรายละเอียดด้านขวา · ชี้หัวคอลัมน์เพื่อดูวิธีนับ · Util % ≥80% แดง · ≥60% เหลือง'
+      h+=cardsHtml(S2,rows);
+      h+='<div class="stab-tblnote" style="font-size:11px;color:var(--mu);margin-top:8px;line-height:1.7">คลิกหัวคอลัมน์เพื่อเรียง · คลิกแถวเพื่อดูรายละเอียดด้านขวา · ชี้หัวคอลัมน์เพื่อดูวิธีนับ · Util % ≥80% แดง · ≥60% เหลือง'
         +'<br>นับทุกรายการยืมต่อวัน (เครื่องที่คืนแล้วยืมใหม่วันเดียวกันนับ 2) เหมือนค่า Peak/AVG เดิม = ความต้องการใช้งานจริง'
         +(on.fy?'<br>ปีงบ: ปีปัจจุบันยังไม่ครบปี — “ยืม” เทียบตรงๆ กับปีที่ครบไม่ได้ ให้ดู “เฉลี่ย/วัน” (หารด้วยจำนวนวันจริง) · * = ข้อมูลไม่ครบปี (แอปเริ่มมีข้อมูลกลางปี หรือโหลดย้อนหลัง 1 ปี)':'')
         +'</div>';
@@ -19401,10 +19435,17 @@ window._omDeptList=function(){
         else if(c.hasAttribute('data-pre')){var p=PRE[c.getAttribute('data-pre')];if(p){GKEYS.forEach(function(k){on[k]=p.g.indexOf(k)>=0;});sortK=p.k;sortD=-1;lsSet(LS_GRP,JSON.stringify(on));lsSet(LS_SORT,JSON.stringify({k:sortK,d:sortD}));}}
         drawMx();return;
       }
+      var sd=e.target.closest('[data-sortdir]');
+      if(sd){sortD=-sortD;lsSet(LS_SORT,JSON.stringify({k:sortK,d:sortD}));drawMx();return;}
       var th=e.target.closest('#stabMxTbl th.stab-s');
       if(th){var k2=th.getAttribute('data-k');if(sortK===k2)sortD=-sortD;else{sortK=k2;sortD=k2==='k'?1:-1;}lsSet(LS_SORT,JSON.stringify({k:sortK,d:sortD}));drawMx();return;}
-      var tr=e.target.closest('#stabMxTbl tbody tr[data-i]');
+      var tr=e.target.closest('#stabMxTbl tbody tr[data-i],.stab-cd[data-i]');
       if(tr&&M&&M.sorted){var r=M.sorted[+tr.getAttribute('data-i')];if(r)drOpen(r.k);}
+    });
+
+    SC.addEventListener('change',function(e){
+      var sl=e.target&&e.target.id==='stabMxSort'?e.target:null;if(!sl)return;
+      var k=sl.value;if(!k)return;sortK=k;sortD=k==='k'?1:-1;lsSet(LS_SORT,JSON.stringify({k:sortK,d:sortD}));drawMx();
     });
 
     // ── ลิ้นชักรายละเอียด (ด้านขวา) ──
@@ -19479,7 +19520,7 @@ window._omDeptList=function(){
     document.addEventListener('keydown',function(e){if(e.key==='Escape'&&drName)drClose();});
     document.addEventListener('mousedown',function(e){
       var t=e.target;if(!drName||!t||!t.closest)return;
-      if(dr.contains(t)||t.closest('#stabMxTbl tbody tr')||t.closest('.mbk'))return;   // คลิกในลิ้นชัก/แถวตาราง/หน้าต่าง modal ของแอป → ไม่ปิด
+      if(dr.contains(t)||t.closest('#stabMxTbl tbody tr')||t.closest('.stab-cd')||t.closest('.mbk'))return;   // คลิกในลิ้นชัก/แถวตาราง/หน้าต่าง modal ของแอป → ไม่ปิด
       drClose();
     });
 
