@@ -19565,5 +19565,151 @@ window._omDeptList=function(){
   }
 })();
 </script>
+<script>
+/* §REPAIR-STALE-CLOSE — ปิดงานซ่อมที่ค้าง "รอซ่อม" ทั้งที่สถานะเครื่องในทะเบียนไม่ใช่ "ซ่อม" แล้ว (เช่น ถูกเปลี่ยนเป็น คงเหลือ/ยืม จากการคืน-ยกเลิกใบยืม-ยืมด่วน)
+   หน้างานส่งซ่อม ปุ่ม "✅ รับคืน" เดิมจะเตือนแล้วไม่ทำอะไร → ตอนนี้ถามยืนยัน แล้วเปิดฟอร์มบันทึก "รับคืน" ที่เขียนเฉพาะประวัติซ่อม
+   หลักการ: ครอบ window.repairMarkReturned ไว้ ไม่แก้โค้ดเดิม · กรณีสถานะเป็น "ซ่อม" อยู่ → เรียกตัวเดิมทุกอย่างเหมือนเดิม
+   ไม่เปลี่ยนสถานะเครื่อง (equipment_units ไม่ถูกเขียน) · เขียนแถว equipment_maintenance_log event_type='returned' ชุดคอลัมน์เดียวกับ saveMaintLog
+   ก่อนบันทึกอ่านข้อมูลสดจากฐาน: ยังมีงานค้างอยู่จริงไหม · ถ้าระหว่างนั้นเครื่องกลับเป็น "ซ่อม" → ใช้ฟอร์มเดิมแทน */
+(function(){
+  try{
+    if(typeof window.repairMarkReturned!=='function'||typeof _repairOpenSimpleModal!=='function'||typeof _repairBuildJobs!=='function'||!window.SB)return;
+    var ORIG=window.repairMarkReturned,MID='mRepairStale';
+    function E(v){return(typeof esc==='function')?esc(v):String(v==null?'':v);}
+    function toast(m,t){try{if(window.toast)window.toast(m,t);}catch(e){}}
+    function todayStr(){try{if(typeof localDateStr==='function')return localDateStr(new Date());}catch(e){}var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+    function pendingOf(logs){var p=null;_repairBuildJobs(logs).forEach(function(j){if(!j.returned&&j.sent)p=j;});return p;}
+    function openForm(unitId,u){
+      var body='<div style="display:flex;flex-direction:column;gap:10px">'
+        +'<div style="font-size:12px;line-height:1.7;background:var(--s2);border-radius:8px;padding:8px 10px">'+E(u.equipment_type)+' — No.'+E(u.unit_no)
+        +'<br>สถานะในทะเบียนตอนนี้: <b>'+E(u.status)+'</b> — การบันทึกนี้<b>เขียนประวัติซ่อมอย่างเดียว ไม่เปลี่ยนสถานะเครื่อง</b></div>'
+        +'<div><div style="font-size:11px;color:var(--mu);margin-bottom:4px">วันที่รับคืน *</div><input type="date" id="stlDate" value="'+todayStr()+'" style="width:100%"></div>'
+        +'<div><div style="font-size:11px;color:var(--mu);margin-bottom:4px">สิ่งที่ซ่อม/เปลี่ยน (ไม่บังคับ)</div><textarea id="stlNote" rows="2" style="width:100%"></textarea></div>'
+        +'<div><div style="font-size:11px;color:var(--mu);margin-bottom:4px">ผู้รับคืน (ไม่บังคับ)</div><input type="text" id="stlRecv" style="width:100%"></div>'
+        +'<div><div style="font-size:11px;color:var(--mu);margin-bottom:4px">ผู้รับผิดชอบ/บริษัท (ไม่บังคับ)</div><input type="text" id="stlResp" style="width:100%"></div>'
+        +'<div><div style="font-size:11px;color:var(--mu);margin-bottom:4px">ค่าใช้จ่าย (บาท, ไม่บังคับ)</div><input type="number" id="stlCost" style="width:100%"></div></div>';
+      window._stlUnitId=unitId;
+      _repairOpenSimpleModal(MID,'✅ บันทึกรับคืน (ปิดงานซ่อมที่ค้าง)',body,
+        '<button class="btn bg" onclick="closeM(\''+MID+'\')">ยกเลิก</button><button class="btn bp" id="stlSaveBtn" onclick="repairStaleSave()">💾 บันทึก</button>',480);
+    }
+    window.repairMarkReturned=function(unitId){
+      var u=window._EQ_UNITS_BY_ID&&window._EQ_UNITS_BY_ID[unitId];
+      if(!u||u.status==='ซ่อม')return ORIG.apply(this,arguments);   // ปกติ → ฟอร์มเดิมทั้งหมด
+      if(!confirm('เครื่อง '+u.equipment_type+' No.'+u.unit_no+' มีสถานะในทะเบียนเป็น "'+u.status+'" แล้ว (ไม่ใช่ "ซ่อม") แต่งานซ่อมนี้ยังไม่มีรายการรับคืน\n\nต้องการบันทึกรับคืนเพื่อปิดงานซ่อมไหม?\n(จะบันทึกลงประวัติซ่อมอย่างเดียว ไม่เปลี่ยนสถานะเครื่อง)'))return;
+      openForm(unitId,u);
+    };
+    window.repairStaleSave=async function(){
+      var unitId=window._stlUnitId,u=window._EQ_UNITS_BY_ID&&window._EQ_UNITS_BY_ID[unitId];if(!u)return;
+      var g=function(id){var el=document.getElementById(id);return el?el.value.trim():'';};
+      var date=g('stlDate');if(!date){toast('กรุณาเลือกวันที่รับคืน','error');return;}
+      var btn=document.getElementById('stlSaveBtn');
+      if(btn){if(btn.disabled)return;btn.disabled=true;btn.textContent='⏳ กำลังบันทึก...';}
+      var restore=function(){if(btn){btn.disabled=false;btn.textContent='💾 บันทึก';}};
+      try{
+        var cur=await SB.get('equipment_units','id=eq.'+unitId+'&select=id,status');
+        if(cur&&cur[0]&&cur[0].status==='ซ่อม'){   // ระหว่างนี้เครื่องกลับเป็น "ซ่อม" → ใช้ฟอร์มเดิม (เปลี่ยนสถานะ+เขียนประวัติตามปกติ)
+          u.status='ซ่อม';closeM(MID);restore();ORIG.call(window,unitId);return;
+        }
+        var logs=await SB.get('equipment_maintenance_log','unit_id=eq.'+unitId+'&order=event_date.asc,created_at.asc&limit=1000');
+        var job=pendingOf(logs);
+        if(!job){closeM(MID);restore();toast('ไม่มีงานซ่อมค้างของเครื่องนี้แล้ว (อาจถูกปิดจากที่อื่น) — รีเฟรชรายการ','warning');if(typeof renderRepair==='function')renderRepair();return;}
+        if(job.sent.event_date&&date<job.sent.event_date){toast('วันที่รับคืน ('+date+') ต้องไม่ก่อนวันส่งซ่อม ('+job.sent.event_date+')','error');restore();return;}
+        var t=todayStr();
+        if(date>t&&!confirm('⚠️ วันที่รับคืน '+date+' ยังมาไม่ถึง (วันนี้ '+t+')\nอาจพิมพ์วันที่ผิด — ยืนยันบันทึกต่อไหม?')){restore();return;}
+        var costRaw=g('stlCost'),cost=costRaw!==''?parseFloat(costRaw):null;
+        await SB.post('equipment_maintenance_log',{
+          unit_id:unitId,equipment_type:job.sent.equipment_type,unit_no:job.sent.unit_no,
+          event_type:'returned',event_date:date,note:g('stlNote')||null,
+          responsible:g('stlResp')||null,cost:(cost!==null&&!isNaN(cost))?cost:null,
+          receiver:g('stlRecv')||null
+        });
+        closeM(MID);restore();
+        toast('บันทึกรับคืนแล้ว — ปิดงานซ่อมที่ค้าง (สถานะเครื่องไม่เปลี่ยน)','success');
+        if(typeof renderRepair==='function')renderRepair();
+      }catch(e){restore();toast('บันทึกไม่สำเร็จ: '+e.message,'error');}
+    };
+  }catch(e){try{console.warn('[repair-stale-close]',e);}catch(_){}}
+})();
+</script>
+<script>
+/* §QB-REPAIR-WARN — ยืมด่วน: เครื่องที่สถานะในทะเบียนเป็น ซ่อม/รอจำหน่าย/ใช้ประจำแผนก/ว่าง → เตือนรวมครั้งเดียวก่อนบันทึก (เหมือนฟอร์มยืมปกติ)
+   และเมื่อบันทึกเครื่องที่เป็น "ซ่อม" สำเร็จ → ปิดงานซ่อมที่ค้างให้อัตโนมัติ (ใช้ _repairAutoCloseIfPending ตัวเดิมที่ฟอร์มยืมปกติใช้)
+   หลักการ: ครอบ saveQuickBorrow และ _qbMarkSuccess ไว้ ไม่แก้โค้ดเดิม · ไม่เตือน/ไม่ปิดงานถ้าข้อมูลหัวใบยืม/เลขเครื่องยังไม่ครบ (ให้ตัวเดิมแจ้งข้อผิดพลาดของมันเอง)
+   ไม่มีข้อมูลทะเบียน/ไม่พบเลข → ยืมได้ตามปกติ ไม่บล็อก (หลักการเดิม: ทะเบียนเป็นข้อมูลเสริม) · ยกเลิกคำเตือน = ไม่บันทึกอะไรเลย */
+(function(){
+  try{
+    if(typeof saveQuickBorrow!=='function'||typeof _qbMarkSuccess!=='function'||typeof getStaff!=='function'||typeof _eqNoNorm!=='function')return;
+    var WARN=['ซ่อม','รอจำหน่าย','ใช้ประจำแผนก','ว่าง'];
+    var OSAVE=window.saveQuickBorrow,OOK=window._qbMarkSuccess;
+    var PEND={};   // key → {id, eqNo} ของเครื่องที่ตอนเตือนสถานะเป็น "ซ่อม" (ใช้ปิดงานซ่อมหลังบันทึกสำเร็จ)
+    function val(id){var el=document.getElementById(id);return el?String(el.value==null?'':el.value).trim():'';}
+    function unitOf(name,eqNo){
+      var a=(window._EQ_UNITS&&window._EQ_UNITS[name])||[];
+      for(var i=0;i<a.length;i++)if(S(a[i].unit_no)===S(eqNo))return a[i];
+      return null;
+    }
+    window.saveQuickBorrow=function(){
+      PEND={};
+      try{
+        // ข้อมูลหัวใบยืมยังไม่ครบ → ปล่อยให้ตัวเดิมแจ้ง (ไม่ถามก่อน)
+        var dc=val('qbSelDeptCode');
+        if(!val('qbLoanDate')||!dc||!val('qbPatientName')||!getStaff('qbGiver')||(dc==='9999'&&!val('qbDeptOther')))return OSAVE.apply(this,arguments);
+        var found=[],complete=true;
+        Object.keys(_qbSelected).forEach(function(name){
+          for(var i=0;i<_qbSelected[name];i++){
+            var key=(name+'__'+i).replace(/[^a-zA-Z0-9ก-๙]/g,'_');
+            if(_qbUnitStatus[key]==='success')continue;
+            var no=_eqNoNorm(val('qbEqNo_'+key));
+            if(!no||_eqNoMulti(no)){complete=false;continue;}
+            var u=unitOf(name,no);
+            if(u&&WARN.indexOf(u.status)!==-1)found.push({key:key,name:name,no:no,u:u});
+          }
+        });
+        if(complete&&found.length){
+          var list=found.map(function(f){return'• '+f.name+' No.'+f.no+' — "'+f.u.status+'"';}).join('\n');
+          if(!confirm('พบเครื่องที่มีสถานะพิเศษในทะเบียน '+found.length+' รายการ:\n'+list+'\n\nยืนยันจะยืมต่อไหม? (ยืนยันแล้วสถานะจะเปลี่ยนเป็น "ยืม" · เครื่องที่เป็น "ซ่อม" จะปิดงานซ่อมที่ค้างอยู่ให้อัตโนมัติ)'))return;
+          found.forEach(function(f){if(f.u.status==='ซ่อม')PEND[f.key]={id:f.u.id,no:f.no};});
+        }
+      }catch(e){PEND={};try{console.warn('[qb-repair-warn]',e);}catch(_){}}
+      return OSAVE.apply(this,arguments);
+    };
+    window._qbMarkSuccess=function(key){
+      var r=OOK.apply(this,arguments);
+      try{
+        var p=PEND[key];
+        if(p){delete PEND[key];if(typeof window._repairAutoCloseIfPending==='function')window._repairAutoCloseIfPending(p.id,getStaff('qbGiver'));}
+      }catch(e){try{console.warn('[qb-repair-warn] ปิดงานซ่อมอัตโนมัติไม่สำเร็จ (ไม่กระทบการยืม):',e);}catch(_){}}
+      return r;
+    };
+  }catch(e){try{console.warn('[qb-repair-warn]',e);}catch(_){}}
+})();
+</script>
+<script>
+/* §INV-STATUS-CONFIRM — หน้า Admin "จัดการสถานะเครื่องมือแพทย์": ถามยืนยันก่อนเปลี่ยนสถานะที่ทำให้ตัวเลข Total/Active ของชนิดนั้นเปลี่ยน
+   คือ เข้า/ออกจาก "รอจำหน่าย" · "ใช้ประจำแผนก" · "ว่าง" (กดผิดแล้วตัวเลขคลังเพี้ยนทั้งแอป)
+   ไม่ถามเมื่อ: ยืม ↔ คงเหลือ (มีปุ่ม "ซิงก์สถานะยืม" อยู่แล้ว) · เข้า/ออก "ซ่อม" (มีฟอร์มบันทึกซ่อมเป็นตัวยืนยันอยู่แล้ว กดยกเลิกได้)
+   หลักการ: ครอบ window.invUnitStatus ไม่แก้โค้ดเดิม · ยืนยัน = เรียกตัวเดิมเหมือนเดิมทุกอย่าง · ยกเลิก = ไม่เขียนอะไร และคืนค่ารายการเลื่อนลงเป็นสถานะเดิม */
+(function(){
+  try{
+    if(typeof window.invUnitStatus!=='function'||!window._EQ_UNITS_BY_ID)return;
+    var ORIG=window.invUnitStatus,RISKY=['รอจำหน่าย','ใช้ประจำแผนก','ว่าง'];
+    window.invUnitStatus=function(id,value){
+      try{
+        var u=window._EQ_UNITS_BY_ID[id];
+        if(u&&value!==u.status&&value!=='ซ่อม'&&u.status!=='ซ่อม'&&(RISKY.indexOf(value)!==-1||RISKY.indexOf(u.status)!==-1)){
+          var msg='เปลี่ยนสถานะ '+u.equipment_type+' No.'+u.unit_no+'\nจาก "'+u.status+'" เป็น "'+value+'" ใช่ไหม?\n\n'
+            +'การเปลี่ยนนี้ทำให้ตัวเลข Total/Active ของ '+u.equipment_type+' เปลี่ยน (รอจำหน่าย/ใช้ประจำแผนก/ว่าง ไม่นับเป็นเครื่องพร้อมใช้) และมีผลกับหน้าสถิติ/แดชบอร์ด';
+          if(!confirm(msg)){
+            var sel=document.querySelector('select.inline-edit[onchange^="invUnitStatus('+id+',"]');
+            if(sel)sel.value=u.status;   // คืนรายการเลื่อนลงเป็นสถานะเดิม (ไม่เขียนอะไรลงฐาน)
+            return;
+          }
+        }
+      }catch(e){try{console.warn('[inv-status-confirm]',e);}catch(_){}}
+      return ORIG.apply(this,arguments);
+    };
+  }catch(e){try{console.warn('[inv-status-confirm]',e);}catch(_){}}
+})();
+</script>
 </body>
 </html>
